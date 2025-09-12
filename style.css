@@ -1,0 +1,138 @@
+:root {
+    --primary-color: #1a73e8;
+    --success-color: #5cb85c;
+    --danger-color: #d9534f;
+    --background-color: #f4f7f9;
+    --container-bg: #ffffff;
+    --text-color: #3c4043;
+    --border-color: #e0e0e0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+.container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: var(--container-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* --- 画面とヘッダー --- */
+.screen, .app-screen {
+    width: 100%;
+}
+
+header {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 10px 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.header-content {
+    max-width: 800px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h2 {
+    margin: 0;
+}
+
+/* --- ログイン画面 --- */
+#login-screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+#login-screen .container {
+    text-align: center;
+}
+
+/* --- ボタンと入力欄 --- */
+input[type="text"], input[type="number"], input[type="email"] {
+    width: calc(100% - 22px);
+    padding: 10px;
+    margin-top: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+#logout-btn { background-color: var(--danger-color); }
+#refresh-list-btn { background-color: var(--success-color); margin-bottom: 15px; }
+
+/* --- フォームとナビゲーション --- */
+nav#main-menu {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+.button-group .action-btn {
+    flex-grow: 1;
+    padding: 15px;
+}
+
+/* --- テーブル --- */
+.table-container { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid var(--border-color); padding: 10px; text-align: left; }
+thead { background-color: #f2f2f2; }
+tbody tr:nth-child(even) { background-color: #fafafa; }
+
+/* --- ユーティリティ --- */
+.error-message { color: var(--danger-color); margin-top: 10px; }
+.admin-only { display: none; /* JSで管理者の時だけ表示 */ }
+
+#feedback-message {
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    color: white;
+    text-align: center;
+}
+#feedback-message.success { background-color: var(--success-color); }
+#feedback-message.error { background-color: var(--danger-color); }
+
+/* --- ローディングスピナー --- */
+.loader-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.7); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+.loader { border: 8px solid #f3f3f3; border-top: 8px solid var(--primary-color); border-radius: 50%; width: 60px; height: 60px; animation: spin 1.5s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
