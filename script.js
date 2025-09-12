@@ -262,3 +262,18 @@ stockInBtn.addEventListener('click', () => handleStockUpdate('入庫'));
 stockOutBtn.addEventListener('click', () => handleStockUpdate('出庫'));
 linkQrBtn.addEventListener('click', handleLinkQr);
 registerItemBtn.addEventListener('click', handleRegisterItem);
+
+// ----------------------------------------------------
+// ▼▼▼ 以下をscript.jsの末尾に貼り付け ▼▼▼
+// ----------------------------------------------------
+const testBtn = document.getElementById('test-btn');
+testBtn.addEventListener('click', async () => {
+  try {
+    const result = await callApi('test_connection');
+    if (result.status === 'success') {
+      alert('バックエンドとの接続に成功しました！🎉');
+    }
+  } catch (error) {
+    alert('テスト接続に失敗しました。コンソールを確認してください。');
+  }
+});
