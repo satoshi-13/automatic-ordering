@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在庫管理アプリ</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="loader" class="loader-container" style="display: none;">
+        <div class="loader"></div>
+    </div>
+
+    <div id="login-screen" class="screen">
+        <div class="container">
+            <h1>在庫管理システム</h1>
+            <p>ログインIDを入力してください</p>
+            <input type="text" id="login-id" placeholder="ログインID">
+            <button id="login-btn">ログイン</button>
+            <p id="login-error" class="error-message"></p>
+        </div>
+    </div>
+
+    <div id="main-app" class="screen" style="display: none;">
+        <header>
+            <div class="header-content">
+                <h2>在庫管理アプリ</h2>
+                <div id="user-info"></div>
+            </div>
+        </header>
+        
+        <main class="container">
+            <nav id="main-menu">
+                <button data-screen="item-list-screen">物品一覧</button>
+                <button data-screen="stock-update-screen">入出庫</button>
+                <button data-screen="link-qr-screen">QR紐付け</button>
+                <button data-screen="register-item-screen" class="admin-only">物品登録</button>
+                <button id="logout-btn">ログアウト</button>
+            </nav>
+
+            <div id="feedback-message" style="display: none;"></div>
+
+            <div id="app-content">
+                <div id="item-list-screen" class="app-screen">
+                    <h3>物品一覧</h3>
+                    <button id="refresh-list-btn">🔄 更新</button>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>物品名</th>
+                                    <th>型番</th>
+                                    <th>現在在庫</th>
+                                    <th>発注点</th>
+                                </tr>
+                            </thead>
+                            <tbody id="item-list-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="stock-update-screen" class="app-screen" style="display:none;">
+                    <h3>入出庫・棚卸</h3>
+                    <div class="form-group">
+                        <label for="stock-qr-id">QR/バーコード</label>
+                        <input type="text" id="stock-qr-id" placeholder="コードをスキャンまたは入力">
+                    </div>
+                    <div class="form-group">
+                        <label for="stock-quantity">数量</label>
+                        <input type="number" id="stock-quantity" value="1" min="1">
+                    </div>
+                     <div class="form-group">
+                        <label>操作種別</label>
+                        <div class="button-group">
+                            <button id="stock-in-btn" class="action-btn">入庫</button>
+                            <button id="stock-out-btn" class="action-btn">出庫</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="link-qr-screen" class="app-screen" style="display:none;">
+                    <h3>QRコード紐付け</h3>
+                    <p>新しいQRコードを、既存の物品(バーコード)に関連付けます。</p>
+                    <div class="form-group">
+                        <label for="link-new-qr">新しいQRコード</label>
+                        <input type="text" id="link-new-qr" placeholder="新しいQRコードをスキャン">
+                    </div>
+                    <div class="form-group">
+                        <label for="link-source-barcode">紐付け先の製品バーコード</label>
+                        <input type="text" id="link-source-barcode" placeholder="既存の製品バーコードをスキャン">
+                    </div>
+                    <button id="link-qr-btn" class="action-btn">この内容で紐付ける</button>
+                </div>
+
+                <div id="register-item-screen" class="app-screen admin-only" style="display:none;">
+                    <h3>物品の新規登録</h3>
+                    <div class="form-group">
+                        <label for="reg-barcode">製品バーコード (必須)</label>
+                        <input type="text" id="reg-barcode" placeholder="製品のバーコード">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-item-name">物品名</label>
+                        <input type="text" id="reg-item-name" placeholder="例: サージカルマスク">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-model">型番</label>
+                        <input type="text" id="reg-model" placeholder="例: M-300">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-stock">初期在庫数</label>
+                        <input type="number" id="reg-stock" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-reorder-point">発注点</label>
+                        <input type="number" id="reg-reorder-point" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-price">単価</label>
+                        <input type="number" id="reg-price" value="0" min="0">
+                    </div>
+                     <div class="form-group">
+                        <label for="reg-supplier">発注先メールアドレス</label>
+                        <input type="email" id="reg-supplier" placeholder="supplier@example.com">
+                    </div>
+                    <button id="register-item-btn" class="action-btn">この内容で新規登録</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
