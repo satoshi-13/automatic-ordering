@@ -25,7 +25,7 @@ const SHEET_ORDER_LOG     = '発注・キャンセル履歴';
 
 // CORS: 許可するオリジン（'*'は全て許可。本番環境ではフロントエンドのURLに限定推奨）
 // 例）'https://satoshi-13.github.io'
-const ALLOWED_ORIGIN = '*';
+const ALLOWED_ORIGIN = 'https://satoshi-13.github.io';
 
 // 権限ロール
 const ROLES = {
