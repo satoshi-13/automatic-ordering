@@ -4,7 +4,7 @@
 
 // ▼▼▼▼▼【重要】▼▼▼▼▼
 // あなたのGoogle Apps ScriptのウェブアプリURLをここに貼り付けてください
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxjB6I0m0miL8jwLg-AxC4nRzk4jTIj5N3FKzq_cGecLIJfZgrIZk-HoGnF2DE6eDZbww/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzNpKApggyznTBt82xFHqlgCHYMM8ZMyxS0hf5N8L3kLqGiw6aktyMu1k9Bt2XZBEFS4w/exec';
 // ▲▲▲▲▲【重要】▲▲▲▲▲
 
 
