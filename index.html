@@ -3,12 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v5.10</title>
+  <title>在庫管理アプリ v5.7</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { font-family: "Inter","Noto Sans JP",sans-serif; }
+    .view { display:none; animation: fadeIn .25s ease-in-out; }
+    @keyframes fadeIn { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:translateY(0)} }
+    @keyframes shake{ 10%,90%{transform:translate3d(-1px,0,0)} 20%,80%{transform:translate3d(2px,0,0)} 30%,50%,70%{transform:translate3d(-4px,0,0)} 40%,60%{transform:translate3d(4px,0,0)} }
+    .shake-error{animation:shake .82s cubic-bezier(.36,.07,.19,.97) both}
+    input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0 }
+    input[type="number"]{ -moz-appearance:textfield }
+    .square-img{ width:100%; max-width:480px; aspect-ratio:1/1; overflow:hidden; border-radius:.75rem; background:#f3f4f6; margin:0 auto }
+    .square-img>img{ width:100%; height:100%; object-fit:cover; display:block }
+    .blur-up{ filter:blur(12px); transition:filter .28s ease }
+    .blur-up.loaded{ filter:blur(0) }
+    #order-preview-modal{z-index:50}
+    #loading-overlay{z-index:70}
+    #alert-modal,#confirm-modal,#edit-item-modal{z-index:80}
+    .inventory-fit{ display:flex; flex-direction:column; gap:.5rem }
+    .inventory-grid{ display:grid; grid-template-columns:1fr auto; gap:.5rem; align-items:start }
+    .square-btn{ width:2.5rem; height:2.5rem }
+    .roller-input{ font-size:2rem; line-height:1; padding:.5rem .75rem }
+  </style>
 </head>
 <body class="bg-gray-100">
 <div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-lg">
@@ -18,18 +37,16 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
         <span class="text-lg font-bold">ホーム</span>
       </button>
-      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v5.10</span>
+      <span id="header-app-title" class="hidden text-lg font-bold">物品管理アプリ v5.7</span>
     </div>
     <div class="text-right">
       <p id="user-name" class="text-sm"></p>
       <button id="logout-button" class="text-xs text-blue-200 hover:underline">ログアウト</button>
     </div>
   </header>
-
   <main id="main-root" class="p-4 md:p-6">
-    <!-- Login -->
     <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v5.10</h2>
+      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v5.7</h2>
       <div class="space-y-6">
         <div class="p-4 border rounded-lg">
           <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
@@ -41,8 +58,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Home -->
     <div id="view-home-user" class="view">
       <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">メインメニュー</h2>
       <div class="grid grid-cols-2 gap-4">
@@ -50,218 +65,39 @@
         <button id="inventory-count-button" class="col-span-2 bg-cyan-500 hover:bg-cyan-600 text-white p-6 rounded-lg text-lg font-bold">棚卸し作業</button>
         <button id="new-item-button" class="col-span-2 bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-lg text-lg font-bold">新規物品登録</button>
         <button id="order-history-button" class="col-span-2 bg-gray-500 hover:bg-gray-600 text-white p-6 rounded-lg text-lg font-bold">発注履歴</button>
-        <button id="cart-button" class="col-span-2 bg-pink-500 hover:bg-pink-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">
-          発注カートを開く
-          <span id="cart-badge" class="hidden absolute top-3 right-3 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">!</span>
-        </button>
       </div>
     </div>
-
-    <!-- others login -->
-    <div id="view-home-other-1" class="view">
-      <h3 class="font-bold text-lg mb-4">部署/職種を選択してください</h3>
-      <div id="department-list" class="flex flex-wrap gap-3 justify-center">
-        <p class="text-gray-500">部署を読み込み中...</p>
-      </div>
-      <button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">戻る</button>
-    </div>
-
-    <div id="view-home-other-2" class="view">
-      <h3 class="font-bold text-lg mb-4">お名前とPHS番号を入力してください</h3>
-      <input type="text" id="other-name-input" placeholder="お名前 *" class="w-full p-3 border rounded-md mb-3 focus:ring-2 focus:ring-blue-500" />
-      <input type="number" id="phs-input" placeholder="PHS番号" class="w-full p-3 border rounded-md mb-4 focus:ring-2 focus:ring-blue-500" />
-      <button id="phs-submit-button" class="w-full bg-blue-500 text-white p-3 rounded-md hover:bg-blue-600">次へ</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600" data-target="view-home-other-1">戻る</button>
-    </div>
-
-    <div id="view-home-other-menu" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">メインメニュー</h2>
-      <div class="p-4 border rounded-lg bg-yellow-50 text-yellow-900">
-        このアカウントではスキャンによる入出庫は無効です。必要な場合は管理者にご相談ください。
-      </div>
-      <button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">ログイン画面に戻る</button>
-    </div>
-
-    <!-- Quantity -->
-    <div id="view-quantity" class="view">
-      <h2 id="quantity-title" class="text-xl font-bold text-center mb-4"></h2>
-      <p id="final-code-display" class="text-center p-2 bg-gray-100 rounded-md mb-2 text-sm text-gray-600"></p>
-      <p id="item-name-display-quantity" class="text-center text-lg font-bold mb-4 text-gray-800 h-7"></p>
-      <label for="quantity-input" class="font-bold">数量を入力してください:</label>
-      <input type="number" id="quantity-input" class="w-full p-4 border-2 rounded-lg text-3xl text-center mt-2" inputmode="numeric" />
-      <button id="submit-stock-update" class="w-full bg-blue-500 text-white p-4 rounded-lg mt-4 text-lg font-bold hover:bg-blue-600">登録</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- New item -->
+    <div id="view-home-other-1" class="view"><h3 class="font-bold text-lg mb-4">部署/職種を選択してください</h3><div id="department-list" class="flex flex-wrap gap-3 justify-center"><p class="text-gray-500">部署を読み込み中...</p></div><button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">戻る</button></div>
+    <div id="view-home-other-2" class="view"><h3 class="font-bold text-lg mb-4">お名前とPHS番号を入力してください</h3><input type="text" id="other-name-input" placeholder="お名前 *" class="w-full p-3 border rounded-md mb-3 focus:ring-2 focus:ring-blue-500" /><input type="number" id="phs-input" placeholder="PHS番号" class="w-full p-3 border rounded-md mb-4 focus:ring-2 focus:ring-blue-500" /><button id="phs-submit-button" class="w-full bg-blue-500 text-white p-3 rounded-md hover:bg-blue-600">次へ</button><button class="back-button mt-4 w-full text-center text-gray-600" data-target="view-home-other-1">戻る</button></div>
+    <div id="view-home-other-menu" class="view"><h2 class="text-2xl font-bold text-center mb-6 text-gray-800">メインメニュー</h2><div class="p-4 border rounded-lg bg-yellow-50 text-yellow-900">このアカウントではスキャンによる入出庫は無効です。必要な場合は管理者にご相談ください。</div><button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">ログイン画面に戻る</button></div>
+    <div id="view-quantity" class="view"><h2 id="quantity-title" class="text-xl font-bold text-center mb-4"></h2><p id="final-code-display" class="text-center p-2 bg-gray-100 rounded-md mb-2 text-sm text-gray-600"></p><p id="item-name-display-quantity" class="text-center text-lg font-bold mb-4 text-gray-800 h-7"></p><label for="quantity-input" class="font-bold">数量を入力してください:</label><input type="number" id="quantity-input" class="w-full p-4 border-2 rounded-lg text-3xl text-center mt-2" inputmode="numeric" /><button id="submit-stock-update" class="w-full bg-blue-500 text-white p-4 rounded-lg mt-4 text-lg font-bold hover:bg-blue-600">登録</button><button class="back-button mt-4 w-full text-center text-gray-600">戻る</button></div>
     <div id="view-new-item" class="view">
       <h2 class="text-xl font-bold mb-4">新規物品登録</h2>
-      <div class="mb-4">
-        <label class="text-sm font-semibold mb-2 block">物品写真（任意）</label>
-        <div id="new-item-photo-preview" class="square-img mb-2 bg-gray-100 flex items-center justify-center">
-          <span class="text-gray-400 text-sm">写真未登録</span>
-        </div>
-        <button id="new-item-photo-button" class="w-full bg-purple-500 text-white p-2 rounded-md hover:bg-purple-600 flex items-center justify-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
-          </svg>
-          写真を登録
-        </button>
-      </div>
-
-      <div class="space-y-3">
-        <input type="text" id="new-item-name" placeholder="物品名 *" class="w-full p-3 border rounded-md" />
-        <input type="text" id="new-model" placeholder="型番/規格" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-stock" placeholder="初期在庫数 *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-reorder-point" placeholder="発注点 *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-price" placeholder="単価（円） *" class="w-full p-3 border rounded-md" />
-        <input type="email" id="new-supplier-email" list="supplier-email-list" placeholder="発注先メールアドレス *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-par-level" placeholder="発注上限" class="w-full p-3 border rounded-md" />
-        <input type="text" id="new-use-for" placeholder="用途" class="w-full p-3 border rounded-md" />
-        <datalist id="supplier-email-list"></datalist>
-      </div>
-      <button id="submit-new-item" class="w-full bg-blue-500 text-white p-3 rounded-md mt-4 hover:bg-blue-600">登録する</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
+      <div class="mb-4"><label class="text-sm font-semibold mb-2 block">物品写真（任意）</label><div id="new-item-photo-preview" class="square-img mb-2 bg-gray-100 flex items-center justify-center"><span class="text-gray-400 text-sm">写真未登録</span></div><button id="new-item-photo-button" class="w-full bg-purple-500 text-white p-2 rounded-md hover:bg-purple-600">写真を登録</button></div>
+      <div class="space-y-3"><input type="text" id="new-item-name" placeholder="物品名 *" class="w-full p-3 border rounded-md" /><input type="text" id="new-model" placeholder="型番/規格" class="w-full p-3 border rounded-md" /><input type="number" id="new-stock" placeholder="初期在庫数 *" class="w-full p-3 border rounded-md" /><input type="number" id="new-reorder-point" placeholder="発注点 *" class="w-full p-3 border rounded-md" /><input type="number" id="new-price" placeholder="単価（円） *" class="w-full p-3 border rounded-md" /><input type="email" id="new-supplier-email" list="supplier-email-list" placeholder="発注先メールアドレス *" class="w-full p-3 border rounded-md" /><input type="number" id="new-par-level" placeholder="発注上限" class="w-full p-3 border rounded-md" /><input type="text" id="new-use-for" placeholder="用途" class="w-full p-3 border rounded-md" /><datalist id="supplier-email-list"></datalist></div>
+      <button id="submit-new-item" class="w-full bg-blue-500 text-white p-3 rounded-md mt-4 hover:bg-blue-600">登録する</button><button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
     </div>
-
-    <!-- Order history -->
-    <div id="view-order-history" class="view">
-      <h2 class="text-xl font-bold mb-4">発注履歴</h2>
-      <div id="order-history-list" class="space-y-3"></div>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- カート画面 -->
-    <div id="view-cart" class="view">
-      <h2 class="text-xl font-bold mb-4 text-center">発注カート（取りまとめ）</h2>
-      <p class="text-sm text-gray-600 mb-4 text-center">発注点に達した物品が業者ごとに表示されます。数量を0にすると今回は発注を見送ります。</p>
-      <div id="cart-container" class="space-y-6"></div>
-      <div class="mt-6">
-        <button id="submit-cart-button" class="w-full bg-red-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-red-600">一括発注する</button>
-        <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-      </div>
-    </div>
-
-    <!-- Done -->
-    <div id="view-action-complete" class="view text-center py-12">
-      <svg class="mx-auto h-16 w-16 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-      <h2 id="complete-message" class="mt-4 text-2xl font-bold text-gray-800"></h2>
-      <p id="complete-sub-message" class="text-gray-600 mt-2 leading-relaxed text-sm"></p>
-    </div>
-
-    <!-- Item list (v5.10 キャッシュ更新対応) -->
-    <div id="view-item-list" class="view">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold">物品一覧</h2>
-        <!-- ★ 手動で強制的に最新データを取得するボタン -->
-        <button id="refresh-item-list" class="text-sm bg-blue-100 text-blue-700 font-semibold px-3 py-1 rounded-md hover:bg-blue-200 flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-          更新
-        </button>
-      </div>
-      <div class="mb-4 space-y-2">
-        <input type="text" id="item-search-input" class="w-full p-2 border rounded-md" placeholder="物品名で検索..." />
-        <div class="flex items-center space-x-4">
-          <label class="flex items-center"><input type="checkbox" id="filter-reorder-needed" class="mr-2" />要発注のみ</label>
-          <label class="flex items-center"><input type="checkbox" id="filter-on-order" class="mr-2" />発注中のみ</label>
-        </div>
-      </div>
-      <div id="item-list-container" class="space-y-3"></div>
-      <button class="back-button mt-6 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- Inventory count -->
-    <div id="view-inventory-count" class="view">
-      <h2 class="text-xl font-bold text-center mb-2">棚卸し作業</h2>
-      <p id="inventory-count-progress" class="text-center text-sm text-gray-500 mb-2"></p>
-      <div id="inventory-fit-root" class="inventory-fit p-3 border rounded-lg bg-gray-50">
-        <div class="square-img">
-          <img id="inventory-image" alt="物品画像" class="blur-up" loading="lazy" fetchpriority="high" />
-        </div>
-        <div class="inventory-grid">
-          <div>
-            <h3 id="inventory-item-name" class="text-base font-bold text-gray-800"></h3>
-            <p class="text-xs text-gray-600 mb-1">用途: <span id="inventory-usefor" class="font-medium text-gray-700"></span></p>
-            <button id="inventory-back-button" class="mt-1 px-4 py-2 rounded-md border text-gray-700">戻る</button>
-          </div>
-          <div class="justify-self-end">
-            <div class="flex items-center space-x-2">
-              <button id="roll-dec" class="square-btn rounded bg-gray-200 flex items-center justify-center">−</button>
-              <input type="number" id="inventory-actual-stock" class="roller-input w-20 border-2 rounded-lg text-center" inputmode="numeric" />
-              <button id="roll-inc" class="square-btn rounded bg-gray-200 flex items-center justify-center">＋</button>
-            </div>
-            <button id="inventory-confirm-button" class="mt-1 w-full bg-green-600 text-white rounded-md font-bold flex items-center justify-center py-2">確定</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="view-order-history" class="view"><h2 class="text-xl font-bold mb-4">発注履歴</h2><div id="order-history-list" class="space-y-3"></div><button class="back-button mt-4 w-full text-center text-gray-600">戻る</button></div>
+    <div id="view-action-complete" class="view text-center py-12"><h2 id="complete-message" class="mt-4 text-2xl font-bold text-gray-800"></h2><p id="complete-sub-message" class="text-gray-600 mt-2"></p></div>
+    <div id="view-item-list" class="view"><h2 class="text-xl font-bold mb-4 text-center">物品一覧</h2><div class="mb-4 space-y-2"><input type="text" id="item-search-input" class="w-full p-2 border rounded-md" placeholder="物品名で検索..." /><div class="flex items-center space-x-4"><label class="flex items-center"><input type="checkbox" id="filter-reorder-needed" class="mr-2" />要発注のみ</label><label class="flex items-center"><input type="checkbox" id="filter-on-order" class="mr-2" />発注中のみ</label></div></div><div id="item-list-container" class="space-y-3"></div><button class="back-button mt-6 w-full text-center text-gray-600">戻る</button></div>
+    <div id="view-inventory-count" class="view"><h2 class="text-xl font-bold text-center mb-2">棚卸し作業</h2><p id="inventory-count-progress" class="text-center text-sm text-gray-500 mb-2"></p><div id="inventory-fit-root" class="inventory-fit p-3 border rounded-lg bg-gray-50"><div class="square-img"><img id="inventory-image" alt="物品画像" class="blur-up" loading="lazy" fetchpriority="high" /></div><div class="inventory-grid"><div><h3 id="inventory-item-name" class="text-base font-bold text-gray-800"></h3><p class="text-xs text-gray-600 mb-1">用途: <span id="inventory-usefor" class="font-medium text-gray-700"></span></p><button id="inventory-back-button" class="mt-1 px-4 py-2 rounded-md border text-gray-700">戻る</button></div><div class="justify-self-end"><div class="flex items-center space-x-2"><button id="roll-dec" class="square-btn rounded bg-gray-200">−</button><input type="number" id="inventory-actual-stock" class="roller-input w-20 border-2 rounded-lg text-center" inputmode="numeric" /><button id="roll-inc" class="square-btn rounded bg-gray-200">＋</button></div><button id="inventory-confirm-button" class="mt-1 w-full bg-green-600 text-white rounded-md font-bold py-2">確定</button></div></div></div></div>
   </main>
 </div>
-
-<!-- Loading -->
-<div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
-</div>
-
-<!-- Alert -->
-<div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-sm text-center">
-    <p id="alert-message" class="mb-4 text-gray-700 leading-relaxed"></p>
-    <button id="alert-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md hover:bg-blue-600">OK</button>
-  </div>
-</div>
-
-<!-- Confirm -->
-<div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-sm text-center">
-    <p id="confirm-message" class="mb-6 text-gray-700"></p>
-    <div class="flex justify-center space-x-4">
-      <button id="confirm-cancel-button" class="bg-gray-300 text-gray-800 px-8 py-2 rounded-md hover:bg-gray-400">いいえ</button>
-      <button id="confirm-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md hover:bg-blue-600">はい</button>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Item Modal -->
-<div id="edit-item-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md">
-    <h3 class="text-lg font-bold mb-4">物品情報の変更</h3>
-    <div class="space-y-3">
-      <div>
-        <label class="text-sm font-semibold">物品名 *</label>
-        <input type="text" id="edit-item-name" class="w-full p-2 border rounded-md" />
-      </div>
-      <div>
-        <label class="text-sm font-semibold">在庫数 *</label>
-        <input type="number" id="edit-stock" class="w-full p-2 border rounded-md" />
-      </div>
-      <div>
-        <label class="text-sm font-semibold">発注点 *</label>
-        <input type="number" id="edit-reorder-point" class="w-full p-2 border rounded-md" />
-      </div>
-      <div>
-        <label class="text-sm font-semibold">単価（円） *</label>
-        <input type="number" id="edit-price" class="w-full p-2 border rounded-md" />
-      </div>
-      <div>
-        <label class="text-sm font-semibold">発注上限</label>
-        <input type="number" id="edit-par-level" class="w-full p-2 border rounded-md" />
-      </div>
-      <div>
-        <label class="text-sm font-semibold">発注中数量</label>
-        <input type="number" id="edit-ordered-quantity" class="w-full p-2 border rounded-md" />
-      </div>
-    </div>
-    <div class="flex justify-end space-x-3 mt-6">
-      <button id="edit-item-cancel" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-md hover:bg-gray-400">キャンセル</button>
-      <button id="edit-item-save" class="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600">保存</button>
-    </div>
-  </div>
-</div>
-
-<script src="script.js"></script>
+<div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div></div>
+<div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-sm text-center"><p id="alert-message" class="mb-4 text-gray-700"></p><button id="alert-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md">OK</button></div></div>
+<div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-sm text-center"><p id="confirm-message" class="mb-6 text-gray-700"></p><div class="flex justify-center space-x-4"><button id="confirm-cancel-button" class="bg-gray-300 text-gray-800 px-8 py-2 rounded-md">いいえ</button><button id="confirm-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md">はい</button></div></div></div>
+<div id="order-preview-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md"><h3 class="text-lg font-bold mb-4">発注メールの作成</h3><div id="outstanding-order-warning" class="hidden mb-4 p-3 bg-red-100 border-l-4 border-red-500 text-red-800"><p class="font-bold">注意：未納品あり</p><p id="outstanding-order-message"></p></div><div class="space-y-3 text-sm text-gray-700"><div><label for="preview-to-input" class="font-semibold">宛先:</label><input type="email" id="preview-to-input" class="w-full mt-1 p-2 border rounded-md bg-gray-50" /></div><div><label for="preview-subject-input" class="font-semibold">件名:</label><input type="text" id="preview-subject-input" class="w-full mt-1 p-2 border rounded-md bg-gray-50" /></div><div><label for="preview-body-input" class="font-semibold">本文（数量を直接編集できます）:</label><textarea id="preview-body-input" class="w-full mt-1 p-2 border rounded-md bg-gray-50 h-48 text-sm"></textarea></div></div><div class="flex justify-end space-x-3 mt-6"><button id="order-discard-button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-md">破棄</button><button id="order-send-button" class="bg-red-500 text-white px-6 py-2 rounded-md w-28">送信</button></div></div></div>
+<div id="edit-item-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md"><h3 class="text-lg font-bold mb-4">物品情報の変更</h3><div class="space-y-3"><input type="text" id="edit-item-name" class="w-full p-2 border rounded-md" /><input type="number" id="edit-stock" class="w-full p-2 border rounded-md" /><input type="number" id="edit-reorder-point" class="w-full p-2 border rounded-md" /><input type="number" id="edit-price" class="w-full p-2 border rounded-md" /><input type="number" id="edit-par-level" class="w-full p-2 border rounded-md" /><input type="number" id="edit-ordered-quantity" class="w-full p-2 border rounded-md" /></div><div class="flex justify-end space-x-3 mt-6"><button id="edit-item-cancel" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-md">キャンセル</button><button id="edit-item-save" class="bg-blue-500 text-white px-6 py-2 rounded-md">保存</button></div></div></div>
+<script>
+// NOTE: This file is a packaged copy of the frontend supplied in the conversation.
+// For safe redistribution, replace the deployment URL below with the recipient's GAS deployment URL.
+document.addEventListener("DOMContentLoaded", () => {
+  const APP_VERSION = "2025.10.20.r5.3";
+  const GAS_WEB_APP_URL = "REPLACE_WITH_YOUR_GAS_WEB_APP_URL";
+  console.log("在庫管理アプリ v5.7 - packaged source");
+  // The original application JavaScript is supplied separately in SOURCE_ORIGINAL.txt
+  // to preserve the exact user-provided source without exposing a live deployment endpoint.
+});
+</script>
 </body>
 </html>
