@@ -4,7 +4,7 @@
 // ================================================================
 
 // ▼▼▼ 必ず現在のGAS WebアプリURLに置き換えてください ▼▼▼
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbysonwNDi4hHt_KpzfCW1fZFBIeSwUeHa3u_2RjlAxnN70jp63SMlEs6m7Nzy81QI19/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxLkaDgnaLFVpKKeFNx9gPYPo-dADsGrQ6ELCacdpgS8rzWf26o9GRGkKG7ihg0Vl1A/exec';
 // ▲▲▲ 例: https://script.google.com/macros/s/xxxxx/exec ▲▲▲
 
 const CACHE_TTL_MS = 60 * 1000;
