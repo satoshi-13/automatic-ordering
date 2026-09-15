@@ -1,382 +1,1126 @@
-/** 在庫管理アプリ backend 2026-09 reviewed */
-const SPREADSHEET_ID = '10llRezExCXTM9XpXCKP3vp3tbmmTO3Q_Xrgm2n5jsH8';
+/** * =================================================================
+ * 在庫管理アプリ - バックエンド (Google Apps Script) 完全版 v5.9
+ * =================================================================
+ * 更新日: 2026/03/23
+ * バージョン: r5.9
+ * 変更点:
+ * - 【CCメール対応】発注先マスターのCC列読み取りと送信オプション追加
+ * - 【文面変更】一括発注メール本文に院内申請等の案内文を追加
+ * - 【カート機能】1日1回の取りまとめ発注に対応（v5.8からの継続）
+ * =================================================================
+ */
+
+// ---------------------------------------------------------------
+// 定数/共通
+// ---------------------------------------------------------------
+function getSpreadsheetIdFromSettings() {
+  const settingsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('_設定管理');
+  if (!settingsSheet) return SpreadsheetApp.getActiveSpreadsheet().getId();
+  let spreadsheetId = settingsSheet.getRange('B2').getValue();
+  if (!spreadsheetId || String(spreadsheetId).trim() === '') {
+    spreadsheetId = settingsSheet.getRange('B1').getValue();
+  }
+  if (!spreadsheetId || typeof spreadsheetId !== 'string' || spreadsheetId.length < 10) {
+    throw new Error('「_設定管理」シートのB1またはB2に有効なスプレッドシートIDが設定されていません。');
+  }
+  return spreadsheetId;
+}
+
+const SPREADSHEET_ID = getSpreadsheetIdFromSettings();
 const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-const SHEET_USERS = 'ユーザー管理';
-const SHEET_ITEM_MASTER = '物品マスター';
-const SHEET_HISTORY = '入出庫履歴';
-const SHEET_SETTINGS = '設定';
-const SHEET_SUPPLIERS = '発注先マスター';
-const SHEET_ORDER_LOG = '発注・キャンセル履歴';
-const SHEET_INVENTORY = '棚卸しセッション';
-const ROLES = { ADMIN: '管理者', USER: '使用者' };
-const COL_USERS = { EMAIL:1, NAME:2, HOSPITAL:3, DEPARTMENT:4, ROLE:5, LOGIN_ID:6, PHS:7 };
-const COL_INVENTORY = { QR_ID:1, BARCODE:2, ITEM_NAME:3, MODEL:4, STOCK:5, REORDER_POINT:6, SUPPLIER_EMAIL:7, PRICE:8, PAR_LEVEL:9, ORDERED_QUANTITY:10, IS_DELETED:11 };
-const COL_HISTORY = { TIMESTAMP:1, ITEM_KEY:2, TYPE:3, QUANTITY:4, USER_EMAIL:5, DEPARTMENT:6, PHS:7, ORDER_STATUS:8, ORDER_MAIL_ID:9 };
-const INV = { SESSION_ID:1, STATUS:2, USER_EMAIL:3, STARTED_AT:4, UPDATED_AT:5, COMPLETED_AT:6, ITEM_REF:7, ITEM_NAME:8, MODEL:9, EXPECTED_STOCK:10, ACTUAL_STOCK:11, DIFFERENCE:12, CHECKED_AT:13 };
-function doGet() {
-return HtmlService.createHtmlOutput('<h2>Backend is running</h2>');
-}
-function doPost(e) {
-try {
-const req = JSON.parse(e.postData.contents || '{}');
-const action = req.action;
-const payload = req.payload || {};
-if (action === 'login') return jsonResponse(authUser(payload));
-const user = getUser(payload.auth);
-if (action === 'get_item_list') return jsonResponse(getItems(payload));
-if (action === 'get_order_history') return jsonResponse(getOrders(user));
-if (action === 'get_order_card') return jsonResponse(getOrderCard({ ...payload, user }));
-if (action === 'get_active_inventory') return jsonResponse(getActiveInventory(user));
-const lock = LockService.getScriptLock();
-lock.waitLock(15000);
-try {
-if (action === 'stock_update') return jsonResponse(stock({ ...payload, user }));
-if (action === 'send_order') return jsonResponse(sendOrder({ ...payload, user }));
-if (action === 'cancel_order') return jsonResponse(cancelOrder({ ...payload, user }));
-if (action === 'start_inventory') return jsonResponse(startInventory(user));
-if (action === 'save_inventory_item') return jsonResponse(saveInventory({ ...payload, user }));
-if (action === 'complete_inventory') return jsonResponse(completeInventory({ ...payload, user }));
-if (action === 'item_register') {
-if (user.role !== ROLES.ADMIN) throw new Error('管理者権限が必要です。');
-return jsonResponse(registerItem({ ...payload, user }));
-}
-return jsonResponse({ status:'error', message:'無効なアクションです。' });
-} finally {
-try { lock.releaseLock(); } catch (_) {}
-}
-} catch (err) {
-return jsonResponse({ status:'error', message: err.message || String(err) });
-}
-}
-function authUser(auth) {
-if (!auth || (!auth.loginId && !auth.email)) {
-return { status:'error', data:{ isAuthorized:false }, message:'認証情報がありません。' };
-}
-const sh = ss.getSheetByName(SHEET_USERS);
-const rows = sh && sh.getLastRow() > 1 ? sh.getRange(2,1,sh.getLastRow()-1,7).getValues() : [];
-for (const r of rows) {
-const loginMatch = auth.loginId && String(r[5]) === String(auth.loginId);
-const emailMatch = auth.email && String(r[0]).toLowerCase() === String(auth.email).toLowerCase();
-if (loginMatch || emailMatch) {
-return { status:'success', data:{ isAuthorized:true, email:r[0], name:r[1], hospital:r[2], department:r[3], role:r[4], loginId:r[5], phs:r[6] } };
-}
-}
-return { status:'error', data:{ isAuthorized:false }, message:'ログイン情報が見つかりません。' };
-}
-function getUser(auth) {
-const r = authUser(auth);
-if (r.status !== 'success' || !r.data.isAuthorized) throw new Error('認証に失敗しました。');
-return r.data;
-}
-function getItems(payload) {
-if (payload && payload.forceRefresh) clearItems();
-return { status:'success', data:itemRecords() };
-}
-function itemRecords() {
-const cache = CacheService.getScriptCache();
-const hit = cache.get('items_v4');
-if (hit) return JSON.parse(hit);
-const sh = ss.getSheetByName(SHEET_ITEM_MASTER);
-const last = sh.getLastRow();
-if (last < 2) return [];
-const rows = sh.getRange(2,1,last-1,Math.max(sh.getLastColumn(),11)).getValues();
-const out = [];
-rows.forEach((r,i) => {
-if (r[COL_INVENTORY.IS_DELETED-1]) return;
-out.push({
-itemRef:'R:'+(i+2), itemName:r[COL_INVENTORY.ITEM_NAME-1] || '', model:r[COL_INVENTORY.MODEL-1] || '',
-stock:Number(r[COL_INVENTORY.STOCK-1] || 0), reorderPoint:Number(r[COL_INVENTORY.REORDER_POINT-1] || 0),
-supplierEmail:r[COL_INVENTORY.SUPPLIER_EMAIL-1] || '', price:Number(r[COL_INVENTORY.PRICE-1] || 0),
-parLevel:Number(r[COL_INVENTORY.PAR_LEVEL-1] || 0), orderedQuantity:Number(r[COL_INVENTORY.ORDERED_QUANTITY-1] || 0)
-});
-});
-cache.put('items_v4', JSON.stringify(out), 60);
-return out;
-}
-function clearItems() {
-const c = CacheService.getScriptCache();
-c.remove('items_v3');
-c.remove('items_v4');
-}
-function resolveRow(p) {
-const sh = ss.getSheetByName(SHEET_ITEM_MASTER);
-const ref = String(p.itemRef || '');
-if (/^R:\d+$/.test(ref)) {
-const row = Number(ref.slice(2));
-if (row >= 2 && row <= sh.getLastRow()) {
-const v = sh.getRange(row,1,1,Math.max(sh.getLastColumn(),11)).getValues()[0];
-if (!v[COL_INVENTORY.IS_DELETED-1] && (!p.itemName || String(v[2]) === String(p.itemName)) && (!p.model || String(v[3]) === String(p.model))) return row;
-}
-}
-const name = String(p.itemName || '');
-const model = String(p.model || '');
-if (!name || sh.getLastRow() < 2) return -1;
-const rows = sh.getRange(2,1,sh.getLastRow()-1,Math.max(sh.getLastColumn(),11)).getValues();
-for (let i=0;i<rows.length;i++) {
-if (!rows[i][10] && String(rows[i][2]) === name && String(rows[i][3]) === model) return i+2;
-}
-return -1;
-}
-function buildLegacyKeyMap(masterRows) {
-const map = new Map();
-masterRows.forEach((r,i) => {
-const row = i+2;
-const qrList = String(r[0] || '').split(',').map(x=>x.trim()).filter(Boolean);
-qrList.forEach(k => map.set(k,row));
-const barcode = String(r[1] || '').trim();
-if (barcode) map.set(barcode,row);
-map.set('R:'+row,row);
-});
-return map;
-}
-function stock(p) {
-const row = resolveRow(p);
-if (row < 2) throw new Error('対象の物品が見つかりません。');
-const is = ss.getSheetByName(SHEET_ITEM_MASTER);
-const hs = ss.getSheetByName(SHEET_HISTORY);
-const item = is.getRange(row,1,1,Math.max(is.getLastColumn(),11)).getValues()[0];
-const qty = Number(p.quantity || 0);
-if (qty <= 0) throw new Error('数量を確認してください。');
-const next = Number(item[4] || 0) + (p.type === '入庫' ? qty : -qty);
-if (next < 0) throw new Error('在庫数がマイナスになるため処理できません。');
-is.getRange(row,5).setValue(next);
-if (p.type === '入庫') {
-const orderedCell = is.getRange(row,10);
-orderedCell.setValue(Math.max(0,Number(orderedCell.getValue() || 0)-qty));
-}
-hs.appendRow([new Date(),'R:'+row,p.type,qty,p.user.email,p.user.department||'',p.user.phs||'','','']);
-const historyId = hs.getLastRow();
-clearItems();
-const reorder = Number(item[5] || 0);
-const par = Number(item[8] || 0);
-const ordered = Number(item[9] || 0);
-if (p.type === '出庫' && next < reorder) {
-const target = par > 0 ? par : reorder;
-const orderQty = Math.max(0,target-next-ordered);
-if (orderQty > 0) {
-return { status:'success', message:'在庫を更新しました。発注が必要です。', orderRequired:true, mailPreview:orderPreview(item,orderQty,p.user), historyId };
-}
-return { status:'success', message:'在庫を更新しました。発注済み数量を考慮すると追加発注は不要です。' };
-}
-return { status:'success', message:'在庫を更新しました。' };
-}
-function getOrderCard(p) {
-const row = resolveRow(p);
-if (row < 2) throw new Error('対象の物品が見つかりません。');
-const sh = ss.getSheetByName(SHEET_ITEM_MASTER);
-const item = sh.getRange(row,1,1,Math.max(sh.getLastColumn(),11)).getValues()[0];
-const stockNow = Number(item[4] || 0), reorder = Number(item[5] || 0), par = Number(item[8] || 0), ordered = Number(item[9] || 0);
-const target = par > 0 ? par : reorder;
-const suggested = Math.max(1,target-stockNow-ordered);
-return { status:'success', data:{ ...orderPreview(item,suggested,p.user), itemName:item[2], model:item[3] } };
-}
-function sendOrder(p) {
-const is = ss.getSheetByName(SHEET_ITEM_MASTER), hs = ss.getSheetByName(SHEET_HISTORY), os = ss.getSheetByName(SHEET_ORDER_LOG);
-let row = -1, historyId = Number(p.historyId || 0);
-if (historyId >= 2 && historyId <= hs.getLastRow()) {
-const key = String(hs.getRange(historyId,2).getValue() || '');
-if (/^R:\d+$/.test(key)) row = Number(key.slice(2));
-else {
-const master = is.getLastRow()>1 ? is.getRange(2,1,is.getLastRow()-1,Math.max(is.getLastColumn(),11)).getValues() : [];
-row = buildLegacyKeyMap(master).get(key) || -1;
-}
-}
-if (row < 2) row = resolveRow(p);
-if (row < 2) throw new Error('発注対象の物品が見つかりません。');
-const qty = Number(p.quantity || 0);
-if (qty <= 0) throw new Error('発注数量を確認してください。');
-if (!String(p.to || '').trim()) throw new Error('発注先メールアドレスがありません。');
-const item = is.getRange(row,1,1,Math.max(is.getLastColumn(),11)).getValues()[0];
-if (!historyId) {
-hs.appendRow([new Date(),'R:'+row,'発注',qty,p.user.email,p.user.department||'',p.user.phs||'','','']);
-historyId = hs.getLastRow();
-} else {
-hs.getRange(historyId,4).setValue(qty);
-}
-const orderedCell = is.getRange(row,10);
-orderedCell.setValue(Number(orderedCell.getValue() || 0)+qty);
-const message = GmailApp.createDraft(p.to,p.subject,p.body).send();
-const mailId = message.getId();
-admins().forEach(x => GmailApp.sendEmail(x,'[転送：発注] '+p.subject,'',{ htmlBody:String(p.body).replace(/\n/g,'<br>') }));
-hs.getRange(historyId,8).setValue('注文済み');
-hs.getRange(historyId,9).setValue(mailId);
-os.appendRow([new Date(),'発注',item[2],item[3],qty,p.user.name,mailId]);
-clearItems();
-return { status:'success', message:'発注メールを送信しました。', mailId };
-}
-function getOrders(user) {
-const hs = ss.getSheetByName(SHEET_HISTORY), is = ss.getSheetByName(SHEET_ITEM_MASTER);
-const hLast = hs.getLastRow();
-if (hLast < 2) return { status:'success', data:[] };
-const history = hs.getRange(2,1,hLast-1,Math.max(hs.getLastColumn(),9)).getValues();
-const master = is.getLastRow()>1 ? is.getRange(2,1,is.getLastRow()-1,Math.max(is.getLastColumn(),11)).getValues() : [];
-const keyMap = buildLegacyKeyMap(master);
-const out = [];
-history.forEach((r,i) => {
-if (!['注文済み','キャンセル済み'].includes(r[7])) return;
-if (user.role === ROLES.USER && String(r[4]) !== String(user.email)) return;
-const row = keyMap.get(String(r[1] || '')) || -1;
-let name='不明な物品', model='';
-if (row >= 2 && master[row-2]) { name=master[row-2][2] || name; model=master[row-2][3] || ''; }
-out.push({ historyId:i+2, mailId:r[8], itemName:name, model, orderDate:Utilities.formatDate(new Date(r[0]),'Asia/Tokyo','yyyy/MM/dd'), quantity:r[3], status:r[7] });
-});
-out.reverse();
-return { status:'success', data:out };
-}
-function cancelOrder(p) {
-const hs = ss.getSheetByName(SHEET_HISTORY), is = ss.getSheetByName(SHEET_ITEM_MASTER), os = ss.getSheetByName(SHEET_ORDER_LOG);
-const id = Number(p.historyId);
-if (id < 2 || id > hs.getLastRow()) throw new Error('発注履歴が見つかりません。');
-const h = hs.getRange(id,1,1,Math.max(hs.getLastColumn(),9)).getValues()[0];
-if (h[7] !== '注文済み') throw new Error('この発注はキャンセルできません。');
-const key = String(h[1] || '');
-let row = /^R:\d+$/.test(key) ? Number(key.slice(2)) : -1;
-if (row < 2) {
-const master = is.getLastRow()>1 ? is.getRange(2,1,is.getLastRow()-1,Math.max(is.getLastColumn(),11)).getValues() : [];
-row = buildLegacyKeyMap(master).get(key) || -1;
-}
-if (row < 2) throw new Error('物品が見つかりません。');
-const item = is.getRange(row,1,1,Math.max(is.getLastColumn(),11)).getValues()[0], qty=Number(h[3] || 0);
-const orderedCell = is.getRange(row,10);
-orderedCell.setValue(Math.max(0,Number(orderedCell.getValue() || 0)-qty));
-const s = supplier(item[6]);
-if (!s.email) throw new Error('発注先メールアドレスがありません。');
-const subject = '【注文キャンセルのお願い】'+item[2];
-const body = cancelBody(item,qty,p.user);
-GmailApp.sendEmail(s.email,subject,body);
-admins().forEach(x => GmailApp.sendEmail(x,'[転送：キャンセル] '+subject,'',{ htmlBody:body.replace(/\n/g,'<br>') }));
-os.appendRow([new Date(),'キャンセル',item[2],item[3],qty,p.user.name,h[8] || '']);
-hs.getRange(id,8).setValue('キャンセル済み');
-clearItems();
-return { status:'success', message:'キャンセルメールを送信しました。' };
-}
-function invSheet() {
-let sh = ss.getSheetByName(SHEET_INVENTORY);
-if (!sh) {
-sh = ss.insertSheet(SHEET_INVENTORY);
-sh.getRange(1,1,1,13).setValues([['session_id','status','user_email','started_at','updated_at','completed_at','item_ref','item_name','model','expected_stock','actual_stock','difference','checked_at']]);
-}
-return sh;
-}
-function inventoryMapKey(sessionId) { return 'invmap:'+sessionId; }
-function saveInventoryRowMap(sessionId,map) { CacheService.getScriptCache().put(inventoryMapKey(sessionId),JSON.stringify(map),21600); }
-function getInventoryRowMap(sessionId) {
-const cache = CacheService.getScriptCache();
-const hit = cache.get(inventoryMapKey(sessionId));
-if (hit) return JSON.parse(hit);
-const sh = invSheet(), last=sh.getLastRow(), map={};
-if (last > 1) {
-const rows=sh.getRange(2,1,last-1,13).getValues();
-rows.forEach((r,i)=>{ if (String(r[0])===String(sessionId)) map[String(r[6])]=i+2; });
-}
-saveInventoryRowMap(sessionId,map);
-return map;
-}
-function startInventory(user) {
-const active = getActiveInventory(user).data;
-if (active) return { status:'success', data:active };
-const items=itemRecords(), sh=invSheet(), id='INV-'+Utilities.formatDate(new Date(),'Asia/Tokyo','yyyyMMdd-HHmmss')+'-'+String(user.email).slice(0,20), now=new Date();
-const startRow=sh.getLastRow()+1;
-const rows=items.map(i=>[id,'進行中',user.email,now,now,'',i.itemRef,i.itemName,i.model,i.stock,'','','']);
-if (rows.length) sh.getRange(startRow,1,rows.length,13).setValues(rows);
-const map={}; items.forEach((i,index)=>map[i.itemRef]=startRow+index); saveInventoryRowMap(id,map);
-return { status:'success', data:{ sessionId:id, status:'進行中', items:rows.map(invObj) } };
-}
-function getActiveInventory(user) {
-const sh=invSheet(), last=sh.getLastRow();
-if (last<2) return { status:'success', data:null };
-const rows=sh.getRange(2,1,last-1,13).getValues();
-let id='';
-for (let i=rows.length-1;i>=0;i--) {
-if (String(rows[i][2])===String(user.email) && rows[i][1]==='進行中') { id=rows[i][0]; break; }
-}
-if (!id) return { status:'success', data:null };
-const selected=[]; const map={};
-rows.forEach((r,i)=>{ if (r[0]===id) { selected.push(r); map[String(r[6])]=i+2; } });
-saveInventoryRowMap(id,map);
-return { status:'success', data:{ sessionId:id, status:'進行中', items:selected.map(invObj) } };
-}
-function invObj(r) {
-const checked=!!r[12];
-return { itemRef:r[6], itemName:r[7], model:r[8], expectedStock:Number(r[9]||0), actualStock:checked?Number(r[10]||0):'', difference:checked?Number(r[11]||0):0, checked };
-}
-function saveInventory(p) {
-const actual=Number(p.actualStock);
-if (!Number.isFinite(actual) || actual < 0) throw new Error('実在庫数を確認してください。');
-const sh=invSheet(), map=getInventoryRowMap(p.sessionId), rowNum=Number(map[String(p.itemRef)] || 0);
-if (rowNum < 2) throw new Error('棚卸し対象が見つかりません。');
-const r=sh.getRange(rowNum,1,1,13).getValues()[0];
-if (r[1] !== '進行中') throw new Error('この棚卸しは完了済みです。');
-if (String(r[2]) !== String(p.user.email)) throw new Error('編集権限がありません。');
-const expected=Number(r[9]||0), now=new Date();
-sh.getRange(rowNum,5).setValue(now);
-sh.getRange(rowNum,11,1,3).setValues([[actual,actual-expected,now]]);
-return { status:'success', data:{ itemRef:p.itemRef, itemName:r[7], model:r[8], expectedStock:expected, actualStock:actual, difference:actual-expected, checked:true } };
-}
-function completeInventory(p) {
-const sh=invSheet(), last=sh.getLastRow();
-if (last<2) throw new Error('棚卸しデータがありません。');
-const rows=sh.getRange(2,1,last-1,13).getValues();
-const target=[];
-rows.forEach((r,i)=>{ if (String(r[0])===String(p.sessionId)) target.push({ row:i+2, data:r }); });
-if (!target.length) throw new Error('棚卸しセッションが見つかりません。');
-if (String(target[0].data[2]) !== String(p.user.email)) throw new Error('編集権限がありません。');
-if (target[0].data[1] !== '進行中') throw new Error('この棚卸しは完了済みです。');
-const unchecked=target.filter(x=>!x.data[12]);
-if (unchecked.length) throw new Error(`未確認の物品が${unchecked.length}件あります。すべて確認してから完了してください。`);
-const is=ss.getSheetByName(SHEET_ITEM_MASTER), hs=ss.getSheetByName(SHEET_HISTORY), logs=[];
-let changed=0;
-target.forEach(x=>{
-const r=x.data, actual=Number(r[10]||0), expected=Number(r[9]||0);
-if (actual !== expected) {
-const row=resolveRow({ itemRef:r[6], itemName:r[7], model:r[8] });
-if (row>=2) {
-is.getRange(row,5).setValue(actual);
-changed++;
-logs.push([new Date(),'R:'+row,'棚卸修正',actual,p.user.email,p.user.department||'',p.user.phs||'','','']);
-}
-}
-});
-if (logs.length) hs.getRange(hs.getLastRow()+1,1,logs.length,9).setValues(logs);
-const now=new Date();
-target.forEach(x=>{ sh.getRange(x.row,2).setValue('完了'); sh.getRange(x.row,6).setValue(now); });
-CacheService.getScriptCache().remove(inventoryMapKey(p.sessionId));
-clearItems();
-return { status:'success', message:`棚卸しを完了しました（確認 ${target.length}件 / 在庫修正 ${changed}件）。` };
-}
-function registerItem(p) {
-if (!String(p.itemName||'').trim()) throw new Error('物品名は必須です。');
-const sh=ss.getSheetByName(SHEET_ITEM_MASTER);
-sh.appendRow(['','',p.itemName,p.model||'',Number(p.stock||0),Number(p.reorderPoint||0),p.supplierEmail||'',Number(p.price||0),Number(p.parLevel||0),0,false]);
-const row=sh.getLastRow();
-ss.getSheetByName(SHEET_HISTORY).appendRow([new Date(),'R:'+row,'新規登録',Number(p.stock||0),p.user.email,p.user.department||'',p.user.phs||'','','']);
-clearItems();
-return { status:'success', message:`「${p.itemName}」を新規登録しました。` };
-}
-function orderPreview(r,qty,u) {
-const sh=ss.getSheetByName(SHEET_SETTINGS), subjectTpl=sh.getRange('B1').getValue(), bodyTpl=sh.getRange('B2').getValue(), s=supplier(r[6]), price=Number(r[7]||0), subtotal=price*qty;
-return {
-to:s.email,
-subject:String(subjectTpl).replace(/{{物品名}}/g,r[2]).replace(/{{発注者名}}/g,u.name||''),
-body:String(bodyTpl).replace(/{{会社名}}/g,s.companyName||'ご担当者様').replace(/{{担当者名}}/g,s.contactName?s.contactName+' 様':'').replace(/{{物品名}}/g,r[2]).replace(/{{型番}}/g,r[3]||'').replace(/{{数量}}/g,qty).replace(/{{単価}}/g,price.toLocaleString()+'円').replace(/{{小計}}/g,subtotal.toLocaleString()+'円').replace(/{{合計金額}}/g,subtotal.toLocaleString()+'円').replace(/{{病院名}}/g,u.hospital||'').replace(/{{部署名}}/g,u.department||'').replace(/{{発注者名}}/g,u.name||'').replace(/{{発注者メールアドレス}}/g,u.email||''),
-quantity:qty, price, subtotal
+
+// シート名
+const SHEET_USERS         = 'ユーザー管理';
+const SHEET_ITEM_MASTER   = '物品マスター';
+const SHEET_HISTORY       = '入出庫履歴';
+const SHEET_SETTINGS      = '設定';
+const SHEET_DEPARTMENTS   = '部署マスター';
+const SHEET_SUPPLIERS     = '発注先マスター';
+const SHEET_ORDER_LOG     = '発注・キャンセル履歴';
+const SHEET_SETTINGS_ADMIN= '_設定管理';
+
+// 送信元エイリアス（任意）
+const DEFAULT_FROM_ALIAS  = 'me-hosyu@chikamori.com';
+
+// ---- ヘッダ候補 ----
+const HDR = {
+  ITEM_NAME: ['物品名', '品名', '商品名'],
+  MODEL: ['型番/規格', '型番', '規格'],
+  STOCK: ['在庫数', '在庫'],
+  REORDER_POINT: ['発注点', '下限', 'しきい値'],
+  SUPPLIER_EMAIL: ['発注先メールアドレス', '発注先', 'サプライヤメール'],
+  PRICE: ['単価', '価格'],
+  PAR_LEVEL: ['発注上限', '上限', 'PAR'],
+  ORDERED_QUANTITY: ['発注中数量', '未納数量', '未納'],
+  USE_FOR: ['用途'],
+  IMAGE_URL: ['画像URL', '画像', '写真URL'],
+
+  // 履歴
+  H_TIMESTAMP: ['タイムスタンプ', '日時'],
+  H_ITEM_ID: ['物品ID', 'ID', '行番号'],
+  H_ITEM_NAME: ['物品名', '品名'],  
+  H_TYPE: ['種別','タイプ','区分'],
+  H_QUANTITY: ['数量'],
+  H_USER_NAME: ['担当者','ユーザー','発注者','操作担当','担当者名'],
+  H_DEPARTMENT: ['部署'],
+  H_PHS: ['PHS','PHS番号'],
+  H_ORDER_STATUS: ['注文ステータス','ステータス','注文状態','発注ステータス'],
+  H_ORDER_MAIL_ID: ['MailId','メールID','メッセージID','注文メールID'],
+
+  // 発注ログ
+  O_TIMESTAMP: ['タイムスタンプ','日時'],
+  O_TYPE: ['種別'],
+  O_ITEM_NAME: ['物品名'],
+  O_MODEL: ['型番'],
+  O_QUANTITY: ['数量'],
+  O_USER: ['発注者','担当者'],
+  O_MAIL_ID: ['MailId']
 };
+
+// ---------------------------------------------------------------
+// UIメニュー
+// ---------------------------------------------------------------
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('システム管理')
+    .addItem('新規スプレッドシート作成＆初期設定', 'createAndSetupNewSpreadsheet')
+    .addItem('履歴に物品名列を追加', 'initializeHistoryHeaders') 
+    .addSeparator()
+    .addItem('履歴をアーカイブしてクリア', 'archiveAndClearHistory')
+    .addToUi();
 }
-function cancelBody(r,qty,u) {
-const t=ss.getSheetByName(SHEET_SETTINGS).getRange('B3').getValue(), price=Number(r[7]||0);
-return String(t).replace(/{{物品名}}/g,r[2]).replace(/{{型番}}/g,r[3]||'').replace(/{{数量}}/g,qty).replace(/{{単価}}/g,price.toLocaleString()+'円').replace(/{{合計金額}}/g,(price*qty).toLocaleString()+'円').replace(/{{病院名}}/g,u.hospital||'').replace(/{{部署名}}/g,u.department||'').replace(/{{発注者名}}/g,u.name||'').replace(/{{発注者メールアドレス}}/g,u.email||'');
+
+// ---------------------------------------------------------------
+// Web API
+// ---------------------------------------------------------------
+function doGet(e) {
+  try {
+    const action = (e && e.parameter && (e.parameter.action || '')).toLowerCase();
+    if (action === 'image64') {
+      const id = e.parameter.id;
+      if (!id) return createJsonResponse({ status: 'error', message: 'no id' });
+      const file = DriveApp.getFileById(id);
+      const blob = file.getBlob();
+      const ct = blob.getContentType() || 'image/jpeg';
+      if (!/^image\//.test(ct)) {
+        return createJsonResponse({ status: 'error', message: 'not image' });
+      }
+      const base64 = Utilities.base64Encode(blob.getBytes());
+      const dataUrl = `data:${ct};base64,${base64}`;
+      return createJsonResponse({ status: 'success', dataUrl });
+    }
+  } catch (err) {
+    console.error('doGet error:', err);
+    return createJsonResponse({ status: 'error', message: 'image64 failed: ' + String(err && err.message || err) });
+  }
+
+  const html = `<html><head><title>在庫管理アプリ バックエンド v5.9</title>
+  <style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background-color:#f4f7f9}
+  div{padding:2rem 3rem;background-color:white;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);text-align:center}
+  h1{color:#1a73e8}p{color:#3c4043}
+  </style></head><body><div><h1>🚀 在庫管理アプリ バックエンド v5.9</h1><p>このエンドポイントは正常に動作しています。</p></div></body></html>`;
+  return HtmlService.createHtmlOutput(html).setTitle('在庫管理アプリ バックエンド v5.9');
 }
-function supplier(email) {
-const sh=ss.getSheetByName(SHEET_SUPPLIERS), last=sh.getLastRow();
-if (last<2) return { email, companyName:'', contactName:'' };
-const rows=sh.getRange(2,1,last-1,Math.max(sh.getLastColumn(),3)).getValues(), target=String(email||'').trim().toLowerCase();
-for (const r of rows) if (String(r[0]||'').trim().toLowerCase()===target) return { email:r[0], companyName:r[1], contactName:r[2] };
-return { email, companyName:'', contactName:'' };
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  let response;
+  try {
+    lock.waitLock(15000);
+    const requestData = JSON.parse(e.postData.contents || '{}');
+    const action = requestData.action;
+    const payload = requestData.payload || {};
+
+    console.log('doPost action:', action);
+
+    switch (action) {
+      case 'login':               response = authenticateUser(payload); break;
+      case 'get_departments':     response = getDepartments(); break;
+      case 'get_supplier_emails': response = getSupplierEmails(); break;
+
+      case 'stock_update':
+        payload.user = getUserFromAuth(payload.auth);
+        response = handleStockUpdate(payload);
+        break;
+
+      case 'item_register':
+        payload.user = getAuthenticatedUser(payload.auth);
+        response = handleItemRegistration(payload);
+        break;
+
+      case 'get_order_history':
+        payload.user = getUserFromAuth(payload.auth);
+        response = getOrderHistory(payload);
+        break;
+
+      case 'send_order': // 過去の互換性のために残す（個別発注用）
+        payload.user = getUserFromAuth(payload.auth);
+        response = sendOrderEmail(payload);
+        break;
+
+      case 'cancel_order':
+        payload.user = getUserFromAuth(payload.auth);
+        response = cancelOrder(payload);
+        break;
+
+      case 'upload_item_image':
+        response = handleUploadItemImage(payload);
+        break;
+
+      case 'create_equipment_document':
+        payload.user = getAuthenticatedUser(payload.auth);
+        response = createEquipmentDocument(payload);
+        break;
+
+      case 'get_item_list':
+        payload.user = getUserFromAuth(payload.auth);
+        response = getItemList();
+        break;
+
+      case 'update_item':
+        payload.user = getAuthenticatedUser(payload.auth);
+        response = updateItem(payload);
+        break;
+        
+      case 'get_cart':
+        payload.user = getUserFromAuth(payload.auth);
+        response = getCartItems(payload);
+        break;
+
+      case 'submit_batch_orders':
+        payload.user = getUserFromAuth(payload.auth);
+        response = submitBatchOrders(payload);
+        break;
+
+      default:
+        throw new Error('無効なアクションです: ' + action);
+    }
+  } catch (error) {
+    console.error('doPost error:', error.stack || error);
+    response = { status: 'error', message: error.message };
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+  return createJsonResponse(response);
 }
-function admins() {
-const sh=ss.getSheetByName(SHEET_USERS), rows=sh.getLastRow()>1?sh.getRange(2,1,sh.getLastRow()-1,5).getValues():[];
-return rows.filter(r=>r[4]===ROLES.ADMIN).map(r=>r[0]).filter(Boolean);
+
+// ---------------------------------------------------------------
+// 認証
+// ---------------------------------------------------------------
+function getUserFromAuth(authPayload) {
+  if (!authPayload) return null;
+  
+  if ((authPayload.email && authPayload.email.startsWith('other_')) || authPayload.role === 'その他') {
+    return {
+      isAuthorized: true,
+      name: authPayload.name || 'その他',
+      department: authPayload.department || '',
+      phs: authPayload.phs || '',
+      email: authPayload.email || '',
+      role: 'その他',
+      hospital: ''
+    };
+  }
+  
+  const result = authenticateUser(authPayload);
+  if (result.status === 'success' && result.data.isAuthorized) {
+    return result.data;
+  }
+  
+  if (authPayload.name && (authPayload.role === '管理者' || authPayload.role === '使用者')) {
+    return {
+      isAuthorized: true,
+      loginId: authPayload.loginId || '',
+      email: authPayload.email || '',
+      name: authPayload.name,
+      hospital: authPayload.hospital || '',
+      department: authPayload.department || '',
+      role: authPayload.role,
+      phs: authPayload.phs || ''
+    };
+  }
+  return null;
 }
-function jsonResponse(o) {
-return ContentService.createTextOutput(JSON.stringify(o||{})).setMimeType(ContentService.MimeType.JSON);
+
+function getAuthenticatedUser(authPayload){
+  const userResult = authenticateUser(authPayload);
+  if (userResult.status !== 'success' || !userResult.data.isAuthorized) {
+    throw new Error('認証に失敗しました。');
+  }
+  return userResult.data;
+}
+
+function authenticateUser(authPayload){
+  if (!authPayload) return { status: 'error', data: { isAuthorized:false }, message:'認証情報がありません。' };
+  const sheet = ss.getSheetByName(SHEET_USERS);
+  if (!sheet) return { status: 'error', data:{isAuthorized:false}, message:'ユーザー管理シートが見つかりません。' };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { status:'error', data:{isAuthorized:false}, message:'ユーザー情報が空です。' };
+
+  const data = sheet.getRange(2,1,lastRow-1,sheet.getLastColumn()).getValues();
+  const headers = getHeaders_(sheet);
+
+  const idx = {
+    EMAIL: getHeaderIndexFlex_(headers, ['メールアドレス','Email','email']),
+    NAME:  getHeaderIndexFlex_(headers, ['氏名','名前','Name']),
+    HOSP:  getHeaderIndexFlex_(headers, ['病院','病院名']),
+    DEPT:  getHeaderIndexFlex_(headers, ['部署']),
+    ROLE:  getHeaderIndexFlex_(headers, ['権限','ロール','役割','Role']),
+    LOGIN: getHeaderIndexFlex_(headers, ['ログインID','ユーザー番号','ユーザ番号']),
+    PHS:   getHeaderIndexFlex_(headers, ['PHS','PHS番号'])
+  };
+
+  if (authPayload.loginId) {
+    for (const row of data){
+      if (String(row[idx.LOGIN-1]||'') === String(authPayload.loginId)){
+        return {
+          status:'success',
+          data:{
+            isAuthorized:true,
+            loginId: row[idx.LOGIN-1],
+            email: row[idx.EMAIL-1],
+            name:  row[idx.NAME-1],
+            hospital: row[idx.HOSP-1],
+            department: row[idx.DEPT-1],
+            role:  row[idx.ROLE-1],
+            phs:   row[idx.PHS-1]
+          }
+        };
+      }
+    }
+  }
+  
+  if (authPayload.email && !authPayload.loginId) {
+    for (const row of data){
+      if (String(row[idx.EMAIL-1]||'') === String(authPayload.email)){
+        return {
+          status:'success',
+          data:{
+            isAuthorized:true,
+            loginId: row[idx.LOGIN-1],
+            email: row[idx.EMAIL-1],
+            name:  row[idx.NAME-1],
+            hospital: row[idx.HOSP-1],
+            department: row[idx.DEPT-1],
+            role:  row[idx.ROLE-1],
+            phs:   row[idx.PHS-1]
+          }
+        };
+      }
+    }
+  }
+  return { status:'error', data:{isAuthorized:false}, message:'ログイン情報が見つかりません。' };
+}
+
+// ---------------------------------------------------------------
+// マスター取得
+// ---------------------------------------------------------------
+function getDepartments(){
+  const sheet = ss.getSheetByName(SHEET_DEPARTMENTS);
+  if (!sheet) throw new Error('「部署マスター」シートが見つかりません。');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { status:'success', data:[] };
+  const list = sheet.getRange(2,1,lastRow-1,1).getValues()
+    .map(r=>normStr_(r[0])).filter(v=>!!v);
+  return { status:'success', data:list };
+}
+
+function getSupplierEmails(){
+  const sheet = ss.getSheetByName(SHEET_SUPPLIERS);
+  if (!sheet) throw new Error('「発注先マスター」シートが見つかりません。');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { status:'success', data:[] };
+  const emails = sheet.getRange(2,1,lastRow-1,sheet.getLastColumn()).getValues()
+    .map(r=>normStr_(r[0])).filter(Boolean);
+  return { status:'success', data:[...new Set(emails)].sort() };
+}
+
+// ---------------------------------------------------------------
+// 物品一覧
+// ---------------------------------------------------------------
+function getItemList(){
+  try {
+    const sheet = ss.getSheetByName(SHEET_ITEM_MASTER);
+    if (!sheet) throw new Error('物品マスターシートが見つかりません。');
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { status:'success', data:[] };
+
+    const headers = getHeaders_(sheet);
+    const idx = {
+      NAME: getHeaderIndexFlex_(headers, HDR.ITEM_NAME),
+      MODEL: getHeaderIndexFlex_(headers, HDR.MODEL),
+      STOCK: getHeaderIndexFlex_(headers, HDR.STOCK),
+      REORDER: getHeaderIndexFlex_(headers, HDR.REORDER_POINT),
+      SUP: getHeaderIndexFlex_(headers, HDR.SUPPLIER_EMAIL),
+      PRICE: getHeaderIndexFlex_(headers, HDR.PRICE),
+      PAR: getHeaderIndexFlex_(headers, HDR.PAR_LEVEL),
+      ORDERED: getHeaderIndexFlex_(headers, HDR.ORDERED_QUANTITY),
+      USE: getHeaderIndexFlex_(headers, HDR.USE_FOR, true),
+      IMG: getHeaderIndexFlex_(headers, HDR.IMAGE_URL, true)
+    };
+
+    const data = sheet.getRange(2,1,lastRow-1,sheet.getLastColumn()).getValues();
+    
+    const items = data.map((r, rowIndex) => {
+      try {
+        const itemName = String(r[idx.NAME-1] || '').trim();
+        if (!itemName) return null;
+        
+        const itemId = String(rowIndex + 2);
+        
+        return {
+          itemId: itemId,
+          itemName: itemName,
+          model: String(r[idx.MODEL-1] || ''),
+          stock: Number(r[idx.STOCK-1] || 0),
+          reorderPoint: Number(r[idx.REORDER-1] || 0),
+          supplierEmail: String(r[idx.SUP-1] || ''),
+          price: Number(r[idx.PRICE-1] || 0),
+          parLevel: r[idx.PAR-1] || '',
+          orderedQuantity: Number(r[idx.ORDERED-1] || 0),
+          useFor: idx.USE ? String(r[idx.USE-1] || '') : '',
+          imageUrl: idx.IMG ? String(r[idx.IMG-1] || '') : ''
+        };
+      } catch (e) {
+        return null;
+      }
+    }).filter(item => item !== null);
+    
+    return { status:'success', data:items };
+    
+  } catch (error) {
+    return { status:'error', message: error.message };
+  }
+}
+
+// ---------------------------------------------------------------
+// 在庫更新 (v5.8 カート通知方式に変更)
+// ---------------------------------------------------------------
+function handleStockUpdate(payload){
+  const { itemId, type, quantity, user, department, phs, isCorrection } = payload;
+  if (!itemId) throw new Error('物品IDが指定されていません。');
+
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+
+  const invHeaders = getHeaders_(inv);
+  const idx = {
+    NAME: getHeaderIndexFlex_(invHeaders, HDR.ITEM_NAME),
+    MODEL: getHeaderIndexFlex_(invHeaders, HDR.MODEL),
+    STOCK: getHeaderIndexFlex_(invHeaders, HDR.STOCK),
+    REORDER: getHeaderIndexFlex_(invHeaders, HDR.REORDER_POINT),
+    PAR: getHeaderIndexFlex_(invHeaders, HDR.PAR_LEVEL),
+    PRICE: getHeaderIndexFlex_(invHeaders, HDR.PRICE),
+    ORDERED: getHeaderIndexFlex_(invHeaders, HDR.ORDERED_QUANTITY),
+    SUP: getHeaderIndexFlex_(invHeaders, HDR.SUPPLIER_EMAIL)
+  };
+
+  const rowIdx = parseInt(itemId, 10);
+  if (isNaN(rowIdx) || rowIdx < 2 || rowIdx > inv.getLastRow()) {
+    throw new Error('無効な物品IDです: ' + itemId);
+  }
+
+  const row = inv.getRange(rowIdx,1,1,inv.getLastColumn()).getValues()[0];
+  const currentStock = Number(row[idx.STOCK-1] || 0);
+  const itemName = String(row[idx.NAME-1] || ''); 
+
+  let newStock;
+  if (isCorrection) newStock = Number(quantity);
+  else {
+    const delta = (type === '入庫' ? 1 : -1) * Number(quantity);
+    newStock = currentStock + delta;
+  }
+  if (newStock < 0) throw new Error('在庫数がマイナスになります。');
+
+  inv.getRange(rowIdx, idx.STOCK).setValue(newStock);
+
+  if (type === '入庫') {
+    const orderedCell = inv.getRange(rowIdx, idx.ORDERED);
+    const newOrdered = Math.max(0, Number(orderedCell.getValue() || 0) - Number(quantity));
+    orderedCell.setValue(newOrdered);
+  }
+
+  const uname = user ? user.name : 'その他';
+  const udept = user ? (department || user.department || '') : (department || '');
+  const uphs  = user ? (phs || user.phs || '') : (phs || '');
+  
+  hist.appendRow([new Date(), itemId, itemName, type, quantity, uname, udept, uphs, '', '']);
+  const historyId = hist.getLastRow();
+
+  const reorderPoint = Number(row[idx.REORDER-1] || 0);
+  if ((type === '出庫' || type === '棚卸修正') && newStock < reorderPoint){
+    const currentOrdered = Number(row[idx.ORDERED-1] || 0);
+    if ((newStock + currentOrdered) < reorderPoint) {
+      return {
+        status:'success',
+        message:'在庫を更新しました。\n※発注点を下回ったため、管理者の発注カートに追加されました。',
+        historyId
+      };
+    }
+  }
+  return { status:'success', message:'在庫を更新しました。' };
+}
+
+// ---------------------------------------------------------------
+// 新規登録
+// ---------------------------------------------------------------
+function handleItemRegistration(payload){
+  const { itemName, model, stock, reorderPoint, supplierEmail, price, parLevel, useFor, imageUrl, user } = payload;
+  if (!itemName || String(itemName).trim() === '') throw new Error('物品名は必須です。');
+
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const headers = getHeaders_(inv);
+  const idx = {
+    NAME: getHeaderIndexFlex_(headers, HDR.ITEM_NAME),
+    MODEL: getHeaderIndexFlex_(headers, HDR.MODEL),
+    STOCK: getHeaderIndexFlex_(headers, HDR.STOCK),
+    REORDER: getHeaderIndexFlex_(headers, HDR.REORDER_POINT),
+    SUP: getHeaderIndexFlex_(headers, HDR.SUPPLIER_EMAIL),
+    PRICE: getHeaderIndexFlex_(headers, HDR.PRICE),
+    PAR: getHeaderIndexFlex_(headers, HDR.PAR_LEVEL),
+    ORDERED: getHeaderIndexFlex_(headers, HDR.ORDERED_QUANTITY),
+    USE: getHeaderIndexFlex_(headers, HDR.USE_FOR, true),
+    IMG: getHeaderIndexFlex_(headers, HDR.IMAGE_URL, true)
+  };
+
+  const row = Array(inv.getLastColumn()).fill('');
+  row[idx.NAME-1]    = itemName;
+  row[idx.MODEL-1]   = model || '';
+  row[idx.STOCK-1]   = stock || 0;
+  row[idx.REORDER-1] = reorderPoint || 0;
+  row[idx.SUP-1]     = supplierEmail || '';
+  row[idx.PRICE-1]   = price || 0;
+  row[idx.PAR-1]     = parLevel || '';
+  row[idx.ORDERED-1] = 0;
+  if (idx.USE && idx.USE > 0) row[idx.USE-1] = useFor || '';
+
+  inv.appendRow(row);
+  const newItemId = inv.getLastRow();
+
+  if (imageUrl && String(imageUrl).trim() !== '' && String(imageUrl).startsWith('data:image/')) {
+    try {
+      const m = String(imageUrl).match(/^data:(.*?);base64,(.*)$/);
+      if (m) {
+        const mimeType = m[1];
+        const base64 = m[2];
+        const bytes = Utilities.base64Decode(base64);
+        const blob = Utilities.newBlob(bytes, mimeType, `item_${newItemId}.jpg`);
+        
+        const folder = getImageFolder_();
+        const file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        
+        if (idx.IMG && idx.IMG > 0) {
+          inv.getRange(newItemId, idx.IMG).setValue(file.getId());
+        }
+      }
+    } catch (imgError) {}
+  }
+
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  hist.appendRow([new Date(), newItemId, itemName, '新規登録', stock || 0, user.name, user.department||'', user.phs||'', '', '']);
+
+  return { status:'success', message: `「${itemName}」を新規登録しました。` };
+}
+
+// ---------------------------------------------------------------
+// 発注履歴
+// ---------------------------------------------------------------
+function getOrderHistory(payload){
+  const { user } = payload;
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+
+  const hHeaders = getHeaders_(hist);
+  const invHeaders = getHeaders_(inv);
+
+  const hIdx = {
+    TS: getHeaderIndexFlex_(hHeaders, HDR.H_TIMESTAMP),
+    ITEM_ID: getHeaderIndexFlex_(hHeaders, HDR.H_ITEM_ID),
+    QTY: getHeaderIndexFlex_(hHeaders, HDR.H_QUANTITY),
+    USER: getHeaderIndexFlex_(hHeaders, HDR.H_USER_NAME),
+    STATUS: getHeaderIndexFlex_(hHeaders, HDR.H_ORDER_STATUS),
+    MAIL: getHeaderIndexFlex_(hHeaders, HDR.H_ORDER_MAIL_ID)
+  };
+
+  const invIdx = { NAME: getHeaderIndexFlex_(invHeaders, HDR.ITEM_NAME) };
+
+  const hLast = hist.getLastRow();
+  const historyData = (hLast>1) ? hist.getRange(2,1,hLast-1,hist.getLastColumn()).getValues() : [];
+
+  const invLast = inv.getLastRow();
+  const invData = (invLast>1) ? inv.getRange(2,1,invLast-1,inv.getLastColumn()).getValues() : [];
+
+  const invMap = new Map();
+  invData.forEach((row, index)=>{ invMap.set(String(index + 2), row); });
+
+  const filteredWithRowNum = historyData
+    .map((r, index) => ({ row: r, actualRowNum: index + 2 }))
+    .filter(item => {
+      const status = normStr_(item.row[hIdx.STATUS-1]);
+      return status === '注文済み' || status === 'キャンセル済み';
+    });
+
+  const userFiltered = (user.role === '使用者') 
+    ? filteredWithRowNum.filter(item => normStr_(item.row[hIdx.USER-1]) === normStr_(user.name))
+    : filteredWithRowNum;
+
+  const list = userFiltered.map(item => {
+    const r = item.row;
+    const itemId = String(r[hIdx.ITEM_ID-1] || '');
+    const invItem = invMap.get(itemId);
+    
+    return {
+      historyId: item.actualRowNum,
+      mailId: r[hIdx.MAIL-1],
+      itemName: invItem ? invItem[invIdx.NAME-1] : '不明な物品',
+      orderDate: Utilities.formatDate(new Date(r[hIdx.TS-1]), 'JST', 'yyyy/MM/dd'),
+      quantity: r[hIdx.QTY-1],
+      status: r[hIdx.STATUS-1]
+    };
+  }).reverse();
+
+  return { status:'success', data:list };
+}
+
+// ---------------------------------------------------------------
+// メール送信 (個別キャンセル等のために保持)
+// ---------------------------------------------------------------
+function buildSenderOptions_(user, bodyHtml){
+  const aliases = GmailApp.getAliases();
+  const opts = {
+    name: (user && user.name) ? `${user.name}${user.department ? '（' + user.department + '）' : ''}` : '在庫管理アプリ',
+    htmlBody: bodyHtml
+  };
+  if (user && user.email) opts.replyTo = user.email;
+  if (aliases.includes(DEFAULT_FROM_ALIAS)) opts.from = DEFAULT_FROM_ALIAS;
+  return opts;
+}
+
+function sendOrderEmail(payload){
+  const { to, subject, body, historyId, user, quantity } = payload;
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const log = ss.getSheetByName(SHEET_ORDER_LOG);
+
+  const hHeaders = getHeaders_(hist);
+  const hIdx = {
+    ITEM_ID: getHeaderIndexFlex_(hHeaders, HDR.H_ITEM_ID),
+    QTY: getHeaderIndexFlex_(hHeaders, HDR.H_QUANTITY),
+    STATUS: getHeaderIndexFlex_(hHeaders, HDR.H_ORDER_STATUS),
+    MAIL: getHeaderIndexFlex_(hHeaders, HDR.H_ORDER_MAIL_ID)
+  };
+
+  const invHeaders = getHeaders_(inv);
+  const invIdx = {
+    NAME: getHeaderIndexFlex_(invHeaders, HDR.ITEM_NAME),
+    MODEL: getHeaderIndexFlex_(invHeaders, HDR.MODEL),
+    ORDERED: getHeaderIndexFlex_(invHeaders, HDR.ORDERED_QUANTITY),
+    SUP: getHeaderIndexFlex_(invHeaders, HDR.SUPPLIER_EMAIL)
+  };
+
+  hist.getRange(historyId, hIdx.QTY).setValue(Number(quantity||0));
+  const itemId = String(hist.getRange(historyId, hIdx.ITEM_ID).getValue());
+  const rowIdx = parseInt(itemId, 10);
+  
+  if (isNaN(rowIdx) || rowIdx < 2 || rowIdx > inv.getLastRow()) {
+    throw new Error('発注対象の物品が見つかりません。');
+  }
+
+  const orderedCell = inv.getRange(rowIdx, invIdx.ORDERED);
+  orderedCell.setValue(Number(orderedCell.getValue() || 0) + Number(quantity||0));
+
+  const item = inv.getRange(rowIdx,1,1,inv.getLastColumn()).getValues()[0];
+  const supplierEmail = normStr_(item[invIdx.SUP-1]);
+  const sendTo = (to && String(to).trim() !== '') ? to : supplierEmail;
+
+  const bodyHtml = String(body||'').replace(/\n/g,'<br>');
+  const options = buildSenderOptions_(user, bodyHtml);
+  GmailApp.sendEmail(sendTo, subject, "", options);
+
+  const searchFrom = options.from || Session.getActiveUser().getEmail();
+  const threads = GmailApp.search(`to:${sendTo} from:${searchFrom} subject:"${subject}"`, 0, 1);
+  let mailId = null;
+  if (threads.length > 0) mailId = threads[0].getMessages()[0].getId();
+
+  log.appendRow([new Date(), '発注(個別)', item[invIdx.NAME-1], item[invIdx.MODEL-1], Number(quantity||0), user.name, mailId]);
+
+  getAdminEmails().forEach(ad => GmailApp.sendEmail(ad, `[転送：発注] ${subject}`, "", options));
+  hist.getRange(historyId, hIdx.STATUS).setValue('注文済み');
+  hist.getRange(historyId, hIdx.MAIL).setValue(mailId);
+
+  return { status:'success', message:'発注メールを送信しました。', mailId };
+}
+
+function cancelOrder(payload){
+  const { mailId, historyId, user } = payload;
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const log = ss.getSheetByName(SHEET_ORDER_LOG);
+
+  const hHeaders = getHeaders_(hist);
+  const hIdx = {
+    QTY: getHeaderIndexFlex_(hHeaders, HDR.H_QUANTITY),
+    ITEM_ID: getHeaderIndexFlex_(hHeaders, HDR.H_ITEM_ID),
+    ITEM_NAME: getHeaderIndexFlex_(hHeaders, HDR.H_ITEM_NAME, true), 
+    STATUS: getHeaderIndexFlex_(hHeaders, HDR.H_ORDER_STATUS)
+  };
+
+  const invHeaders = getHeaders_(inv);
+  const invIdx = {
+    NAME: getHeaderIndexFlex_(invHeaders, HDR.ITEM_NAME),
+    MODEL: getHeaderIndexFlex_(invHeaders, HDR.MODEL),
+    ORDERED: getHeaderIndexFlex_(invHeaders, HDR.ORDERED_QUANTITY),
+    SUP: getHeaderIndexFlex_(invHeaders, HDR.SUPPLIER_EMAIL)
+  };
+
+  const quantityCancelled = Number(hist.getRange(historyId, hIdx.QTY).getValue() || 0);
+  const itemId = String(hist.getRange(historyId, hIdx.ITEM_ID).getValue());
+  const itemNameFromHist = hIdx.ITEM_NAME ? String(hist.getRange(historyId, hIdx.ITEM_NAME).getValue() || '') : ''; 
+  
+  const rowIdx = parseInt(itemId, 10);
+  if (!isNaN(rowIdx) && rowIdx >= 2 && rowIdx <= inv.getLastRow()) {
+    const orderedCell = inv.getRange(rowIdx, invIdx.ORDERED);
+    orderedCell.setValue(Math.max(0, Number(orderedCell.getValue() || 0) - quantityCancelled));
+
+    const item = inv.getRange(rowIdx,1,1,inv.getLastColumn()).getValues()[0];
+    const itemName = itemNameFromHist || item[invIdx.NAME-1];
+    const supplierEmail = item[invIdx.SUP-1];
+    const supplierInfo = getSupplierInfo(supplierEmail);
+    const cancelBody = createCancelEmailBody(historyId, user);
+    const subject = `【注文キャンセルのお願い】${itemName}`;
+    const options = buildSenderOptions_(user, cancelBody.replace(/\n/g,'<br>'));
+    
+    // キャンセルメールにもCCを適用
+    if (supplierInfo.ccEmail && String(supplierInfo.ccEmail).trim() !== '') {
+      options.cc = String(supplierInfo.ccEmail).trim().replace(/、/g, ','); 
+    }
+
+    GmailApp.sendEmail(supplierInfo.email || supplierEmail, subject, "", options);
+    getAdminEmails().forEach(ad => GmailApp.sendEmail(ad, `[転送：キャンセル] ${subject}`, "", options));
+    log.appendRow([new Date(), 'キャンセル', itemName, item[invIdx.MODEL-1], quantityCancelled, user.name, mailId]);
+  }
+  hist.getRange(historyId, hIdx.STATUS).setValue('キャンセル済み');
+  return { status:'success', message:'キャンセルメールを送信しました。' };
+}
+
+function getAdminEmails(){
+  const sheet = ss.getSheetByName(SHEET_USERS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const headers = getHeaders_(sheet);
+  const idxRole = getHeaderIndexFlex_(headers, ['権限','ロール','役割','Role']);
+  const idxMail = getHeaderIndexFlex_(headers, ['メールアドレス','Email','email']);
+  return sheet.getRange(2,1,sheet.getLastRow()-1,sheet.getLastColumn()).getValues()
+    .filter(r => normStr_(r[idxRole-1]) === '管理者')
+    .map(r => r[idxMail-1]);
+}
+
+function createCancelEmailBody(historyId, user){
+  const settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
+  const cancelTemplate = settingsSheet.getRange('B3').getValue();
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const hH = getHeaders_(hist);
+  const iH = getHeaders_(inv);
+  const hIdx = { ITEM_ID: getHeaderIndexFlex_(hH, HDR.H_ITEM_ID), QTY: getHeaderIndexFlex_(hH, HDR.H_QUANTITY) };
+  const iIdx = { NAME: getHeaderIndexFlex_(iH, HDR.ITEM_NAME), MODEL: getHeaderIndexFlex_(iH, HDR.MODEL), PRICE: getHeaderIndexFlex_(iH, HDR.PRICE) };
+
+  const hRow = hist.getRange(historyId, 1, 1, hist.getLastColumn()).getValues()[0];
+  const itemId = String(hRow[hIdx.ITEM_ID-1] || '');
+  const qty = Number(hRow[hIdx.QTY-1] || 0);
+
+  const iRowIndex = parseInt(itemId, 10);
+  let itemName = '不明な物品', model = '不明', price = 0, total = 0;
+  if (!isNaN(iRowIndex) && iRowIndex >= 2 && iRowIndex <= inv.getLastRow()){
+    const item = inv.getRange(iRowIndex,1,1,inv.getLastColumn()).getValues()[0];
+    itemName = item[iIdx.NAME-1];
+    model    = item[iIdx.MODEL-1];
+    price    = Number(item[iIdx.PRICE-1] || 0);
+    total    = price * qty;
+  }
+
+  return String(cancelTemplate || '')
+    .replace(/{{物品名}}/g, itemName)
+    .replace(/{{型番}}/g, model)
+    .replace(/{{数量}}/g, qty)
+    .replace(/{{単価}}/g, price.toLocaleString()+'円')
+    .replace(/{{合計金額}}/g, total.toLocaleString()+'円')
+    .replace(/{{病院名}}/g, (user && user.hospital) || '')
+    .replace(/{{部署名}}/g, (user && user.department) || '')
+    .replace(/{{発注者名}}/g, (user && user.name) || '')
+    .replace(/{{発注者メールアドレス}}/g, (user && user.email) || '');
+}
+
+// ---------------------------------------------------------------
+// 画像アップロード / 物品更新 / ユーティリティ
+// ---------------------------------------------------------------
+function handleUploadItemImage(payload){
+  try {
+    const { itemId, imageDataUrl, base64, mimeType, fileName } = payload;
+    if (!itemId) throw new Error('物品IDが不明です。');
+
+    const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+    const headers = getHeaders_(inv);
+    let idxIMG = getHeaderIndexFlex_(headers, HDR.IMAGE_URL, true);
+    
+    if (!idxIMG) {
+      const lastCol = inv.getLastColumn();
+      inv.getRange(1, lastCol + 1).setValue('画像URL');
+      idxIMG = lastCol + 1;
+    }
+
+    const rowIndex = parseInt(itemId, 10);
+    if (isNaN(rowIndex) || rowIndex < 2 || rowIndex > inv.getLastRow()) {
+      throw new Error('無効な物品ID: ' + itemId);
+    }
+
+    let blob;
+    if (base64 && mimeType){
+      const bytes = Utilities.base64Decode(base64);
+      blob = Utilities.newBlob(bytes, mimeType, fileName || 'photo.jpg');
+    } else if (imageDataUrl){
+      const m = String(imageDataUrl).match(/^data:(.*?);base64,(.*)$/);
+      if (!m) throw new Error('画像データ形式が不正です。');
+      const bytes = Utilities.base64Decode(m[2]);
+      blob = Utilities.newBlob(bytes, m[1], fileName || 'photo.jpg');
+    } else {
+      throw new Error('画像データがありません。');
+    }
+
+    const folder = getImageFolder_();
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    inv.getRange(rowIndex, idxIMG).setValue(file.getId());
+    return { status:'success', fileId: file.getId(), imageUrl: file.getId(), message: '画像をアップロードしました。' };
+    
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+}
+
+function updateItem(payload){
+  const { itemId, itemName, stock, reorderPoint, price, parLevel, orderedQuantity } = payload;
+  if (!itemId) throw new Error('物品IDが必要です。');
+
+  const sheet = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const headers = getHeaders_(sheet);
+  const idx = {
+    NAME: getHeaderIndexFlex_(headers, HDR.ITEM_NAME),
+    STOCK: getHeaderIndexFlex_(headers, HDR.STOCK),
+    REORDER: getHeaderIndexFlex_(headers, HDR.REORDER_POINT),
+    PRICE: getHeaderIndexFlex_(headers, HDR.PRICE),
+    PAR: getHeaderIndexFlex_(headers, HDR.PAR_LEVEL),
+    ORDERED: getHeaderIndexFlex_(headers, HDR.ORDERED_QUANTITY)
+  };
+
+  const rowIndex = parseInt(itemId, 10);
+  if (isNaN(rowIndex) || rowIndex < 2 || rowIndex > sheet.getLastRow()) {
+    throw new Error('無効な物品ID: ' + itemId);
+  }
+
+  sheet.getRange(rowIndex, idx.NAME).setValue(itemName);
+  sheet.getRange(rowIndex, idx.STOCK).setValue(stock);
+  sheet.getRange(rowIndex, idx.REORDER).setValue(reorderPoint);
+  sheet.getRange(rowIndex, idx.PRICE).setValue(price);
+  sheet.getRange(rowIndex, idx.PAR).setValue(parLevel);
+  sheet.getRange(rowIndex, idx.ORDERED).setValue(orderedQuantity);
+
+  return { status:'success', message:'物品情報を更新しました。' };
+}
+
+function getSupplierInfo(email){
+  const sheet = ss.getSheetByName(SHEET_SUPPLIERS);
+  if (!sheet) return { email: email, companyName:'', contactName:'', ccEmail:'' };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { email: email, companyName:'', contactName:'', ccEmail:'' };
+
+  const headers = getHeaders_(sheet);
+  const idx = {
+    EMAIL: getHeaderIndexFlex_(headers, ['メール','メールアドレス','Email','email']),
+    COMPANY: getHeaderIndexFlex_(headers, ['会社名','社名','Company']),
+    CONTACT: getHeaderIndexFlex_(headers, ['担当者名','ご担当者','Contact','担当者']),
+    // ▼ 追加: CC列を探す
+    CC: getHeaderIndexFlex_(headers, ['CC','cc','CCメール','CCアドレス'], true) 
+  };
+
+  const data = sheet.getRange(2,1,lastRow-1,sheet.getLastColumn()).getValues();
+  const target = normStr_(email).toLowerCase();
+
+  for (const row of data){
+    const mail = normStr_(row[idx.EMAIL-1]).toLowerCase();
+    if (mail && mail === target){
+      return { 
+        email: row[idx.EMAIL-1], 
+        companyName: row[idx.COMPANY-1] || '', 
+        contactName: row[idx.CONTACT-1] || '',
+        ccEmail: idx.CC ? String(row[idx.CC-1] || '') : '' // ▼ 追加: CCアドレスを取得
+      };
+    }
+  }
+  return { email: email, companyName:'', contactName:'', ccEmail:'' };
+}
+
+function createJsonResponse(obj){
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getHeaders_(sheet){
+  return sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(v=>String(v||'').trim());
+}
+
+function getHeaderIndexFlex_(headers, candidates, allowMissing){
+  const set = (Array.isArray(candidates) ? candidates : [candidates]).map(x=>String(x));
+  const normalizedCandidates = set.map(c => normalizeLabel_(c));
+  
+  for (let i=0;i<headers.length;i++){
+    const normalizedHeader = normalizeLabel_(headers[i]);
+    for (let j=0; j<normalizedCandidates.length; j++){
+      if (normalizedCandidates[j] === normalizedHeader) return i+1;
+    }
+  }
+  
+  if (allowMissing) return 0;
+  throw new Error(`必要な列が見つかりません: ${set.join('/')}`);
+}
+
+function normalizeLabel_(s){
+  return normStr_(s).replace(/[（）\(\)\s]/g,'').replace(/ＱＲ/g,'QR').toLowerCase();
+}
+
+function normStr_(v){
+  if (v===undefined || v===null) return '';
+  return String(v).replace(/\r?\n/g,' ').trim();
+}
+
+function initializeHistoryHeaders() {
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  if (!hist) throw new Error('入出庫履歴シートが見つかりません。');
+  const headers = getHeaders_(hist);
+  const itemNameIdx = getHeaderIndexFlex_(headers, HDR.H_ITEM_NAME, true);
+  
+  if (!itemNameIdx) {
+    const itemIdIdx = getHeaderIndexFlex_(headers, HDR.H_ITEM_ID);
+    hist.insertColumnAfter(itemIdIdx);
+    hist.getRange(1, itemIdIdx + 1).setValue('物品名');
+    fillItemNamesInHistory();
+    SpreadsheetApp.getUi().alert('✅ 物品名列を追加し、既存データも更新しました。');
+  } else {
+    SpreadsheetApp.getUi().alert('ℹ️ 物品名列は既に存在します。');
+  }
+}
+
+function fillItemNamesInHistory() {
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const histHeaders = getHeaders_(hist);
+  const hidx = { ITEM_ID: getHeaderIndexFlex_(histHeaders, HDR.H_ITEM_ID), ITEM_NAME: getHeaderIndexFlex_(histHeaders, HDR.H_ITEM_NAME) };
+  const invHeaders = getHeaders_(inv);
+  const iidx = { NAME: getHeaderIndexFlex_(invHeaders, HDR.ITEM_NAME) };
+  
+  const lastRow = hist.getLastRow();
+  if (lastRow < 2) return;
+  
+  for (let row = 2; row <= lastRow; row++) {
+    try {
+      const itemId = hist.getRange(row, hidx.ITEM_ID).getValue();
+      const currentItemName = hist.getRange(row, hidx.ITEM_NAME).getValue();
+      if (currentItemName && String(currentItemName).trim() !== '') continue;
+      
+      const rowIdx = parseInt(itemId, 10);
+      if (!isNaN(rowIdx) && rowIdx >= 2 && rowIdx <= inv.getLastRow()) {
+        const itemName = inv.getRange(rowIdx, iidx.NAME).getValue();
+        if (itemName && String(itemName).trim() !== '') hist.getRange(row, hidx.ITEM_NAME).setValue(itemName);
+      }
+    } catch (e) {}
+  }
+}
+
+function createEquipmentDocument(payload){ return { status: 'error', message: '未実装' }; }
+function createAndSetupNewSpreadsheet(){ SpreadsheetApp.getUi().alert('この機能は現在使用できません。'); }
+function archiveAndClearHistory(){ SpreadsheetApp.getUi().alert('この機能は現在使用できません。'); }
+
+// ===============================================================
+// カート機能 (発注待ちリストの取得と一括発注)
+// ===============================================================
+
+function getCartItems(payload) {
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const headers = getHeaders_(inv);
+  
+  const idx = {
+    NAME: getHeaderIndexFlex_(headers, HDR.ITEM_NAME),
+    MODEL: getHeaderIndexFlex_(headers, HDR.MODEL),
+    STOCK: getHeaderIndexFlex_(headers, HDR.STOCK),
+    REORDER: getHeaderIndexFlex_(headers, HDR.REORDER_POINT),
+    SUP: getHeaderIndexFlex_(headers, HDR.SUPPLIER_EMAIL),
+    PRICE: getHeaderIndexFlex_(headers, HDR.PRICE),
+    PAR: getHeaderIndexFlex_(headers, HDR.PAR_LEVEL),
+    ORDERED: getHeaderIndexFlex_(headers, HDR.ORDERED_QUANTITY)
+  };
+
+  const lastRow = inv.getLastRow();
+  if (lastRow < 2) return { status: 'success', data: [] };
+  
+  const data = inv.getRange(2, 1, lastRow - 1, inv.getLastColumn()).getValues();
+  const cartItems = [];
+
+  data.forEach((row, index) => {
+    const stock = Number(row[idx.STOCK-1] || 0);
+    const reorderPoint = Number(row[idx.REORDER-1] || 0);
+    const ordered = Number(row[idx.ORDERED-1] || 0);
+    const parLevel = Number(row[idx.PAR-1] || 0);
+    
+    // 実在庫 ＋ 未納分 が 発注点を下回っている場合のみカートに入れる
+    if ((stock + ordered) < reorderPoint) {
+      let suggestedQty = parLevel > 0 
+        ? Math.max(0, parLevel - (stock + ordered))
+        : Math.max(0, reorderPoint - (stock + ordered));
+      
+      if (suggestedQty <= 0) suggestedQty = 1;
+
+      cartItems.push({
+        itemId: String(index + 2),
+        itemName: String(row[idx.NAME-1] || ''),
+        model: String(row[idx.MODEL-1] || ''),
+        supplierEmail: String(row[idx.SUP-1] || ''),
+        price: Number(row[idx.PRICE-1] || 0),
+        stock: stock,
+        orderedQuantity: ordered,
+        reorderPoint: reorderPoint,
+        parLevel: parLevel,
+        suggestedQty: suggestedQty
+      });
+    }
+  });
+
+  return { status: 'success', data: cartItems };
+}
+
+function submitBatchOrders(payload) {
+  const { orders, user } = payload;
+  if (!orders || orders.length === 0) throw new Error('発注データがありません。');
+
+  const inv = ss.getSheetByName(SHEET_ITEM_MASTER);
+  const hist = ss.getSheetByName(SHEET_HISTORY);
+  const log = ss.getSheetByName(SHEET_ORDER_LOG);
+
+  const invHeaders = getHeaders_(inv);
+  const idxORDERED = getHeaderIndexFlex_(invHeaders, HDR.ORDERED_QUANTITY);
+  
+  // 業者ごとに注文をグループ化
+  const groupedOrders = {};
+  orders.forEach(order => {
+    const email = order.supplierEmail || 'unknown';
+    if (!groupedOrders[email]) groupedOrders[email] = [];
+    groupedOrders[email].push(order);
+  });
+
+  let sentCount = 0;
+
+  for (const email in groupedOrders) {
+    if (email === 'unknown' || String(email).trim() === '') continue;
+    
+    const supplierOrders = groupedOrders[email];
+    const supplierInfo = getSupplierInfo(email);
+    const contactName = supplierInfo.contactName ? `${supplierInfo.contactName} 様` : 'ご担当者様';
+    
+    let totalAmount = 0;
+    let orderTableHtml = `<table border="1" style="border-collapse: collapse; width: 100%; max-width: 600px;">
+      <tr style="background-color: #f2f2f2;">
+        <th style="padding: 8px;">物品名</th>
+        <th style="padding: 8px;">型番/規格</th>
+        <th style="padding: 8px;">数量</th>
+        <th style="padding: 8px;">単価</th>
+        <th style="padding: 8px;">小計</th>
+      </tr>`;
+
+    supplierOrders.forEach(order => {
+      const subtotal = order.price * order.quantity;
+      totalAmount += subtotal;
+      
+      orderTableHtml += `
+        <tr>
+          <td style="padding: 8px;">${order.itemName}</td>
+          <td style="padding: 8px;">${order.model}</td>
+          <td style="padding: 8px; text-align: right;">${order.quantity}</td>
+          <td style="padding: 8px; text-align: right;">${order.price.toLocaleString()}円</td>
+          <td style="padding: 8px; text-align: right;">${subtotal.toLocaleString()}円</td>
+        </tr>`;
+
+      // 物品マスターの「発注中数量(未納)」を増やす
+      const rowIdx = parseInt(order.itemId, 10);
+      const orderedCell = inv.getRange(rowIdx, idxORDERED);
+      orderedCell.setValue(Number(orderedCell.getValue() || 0) + Number(order.quantity));
+    });
+
+    orderTableHtml += `
+      <tr style="font-weight: bold; background-color: #f9f9f9;">
+        <td colspan="4" style="padding: 8px; text-align: right;">合計金額</td>
+        <td style="padding: 8px; text-align: right;">${totalAmount.toLocaleString()}円</td>
+      </tr>
+    </table>`;
+
+    const subject = `【発注書】物品のご注文（${user.hospital || ''} ${user.department || ''}）`;
+    
+    // ▼ 今回追加した丁寧なメッセージ文面
+    const bodyHtml = `
+      <p>${supplierInfo.companyName || ''}<br>${contactName}</p>
+      <p>お世話になっております。<br>${user.hospital || ''} ${user.department || ''} の ${user.name || ''} です。</p>
+      <p>以下の物品を発注いたします。</p>
+      <br>
+      ${orderTableHtml}
+      <br>
+      <p>万が一、価格等の上記商品情報が異なる場合は、院内申請が必要となりますので、<br>
+      お手数ですが、前回の納品実績を含めてご連絡いただけますと幸いです。</p>
+      <p>お忙しいところ恐縮ですが、ご対応のほどよろしくお願いいたします。</p>
+      <br>
+      <hr>
+      <p>【発注者情報】<br>
+      病院名: ${user.hospital || ''}<br>
+      部署名: ${user.department || ''}<br>
+      担当者: ${user.name || ''}<br>
+      連絡先メール: ${user.email || ''}</p>
+    `;
+
+    const options = buildSenderOptions_(user, bodyHtml);
+    
+    // ▼ CCメールの追加設定
+    if (supplierInfo.ccEmail && String(supplierInfo.ccEmail).trim() !== '') {
+      options.cc = String(supplierInfo.ccEmail).trim().replace(/、/g, ','); 
+    }
+
+    GmailApp.sendEmail(email, subject, "HTMLを表示できるメールクライアントでご確認ください。", options);
+
+    const searchFrom = options.from || Session.getActiveUser().getEmail();
+    const threads = GmailApp.search(`to:${email} from:${searchFrom} subject:"${subject}"`, 0, 1);
+    let mailId = null;
+    if (threads.length > 0) mailId = threads[0].getMessages()[0].getId();
+
+    supplierOrders.forEach(order => {
+      hist.appendRow([new Date(), order.itemId, order.itemName, '発注', order.quantity, user.name, user.department||'', user.phs||'', '注文済み', mailId]);
+      log.appendRow([new Date(), '発注(一括)', order.itemName, order.model, order.quantity, user.name, mailId]);
+    });
+
+    sentCount++;
+  }
+
+  return { status: 'success', message: `${sentCount}件の業者へ一括発注メールを送信しました。` };
+}
+
+// ===============================================================
+// 画像保存先フォルダの取得
+// ===============================================================
+function getImageFolder_() {
+  const folderId = PropertiesService.getScriptProperties().getProperty('IMAGE_FOLDER_ID');
+  if (folderId) {
+    try {
+      return DriveApp.getFolderById(folderId);
+    } catch (e) {
+      console.error('指定されたフォルダが見つかりません。マイドライブに保存します。', e);
+    }
+  }
+  return DriveApp.getRootFolder();
 }
