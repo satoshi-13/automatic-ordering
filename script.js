@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================
   // 【重要】最新のGAS Web App URL（/exec）に変更してください
   // =========================================================
-  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwgC6nEki-2usFhl_szciIMXG6gNfTORx1oj88hyBQq-qGSTYqu49o0lBE-wajBLk84/exec";
+  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxdMDvk9H6uRCBPHon_46lRRyx-L8qDiUvPJxKviCGj1gum1zg2BLngoC_FtVDAq2VJ/exec";
   
   const DEBUG = true;
   const CACHE_KEY_ITEMS = 'inventory_app_items_cache'; 
