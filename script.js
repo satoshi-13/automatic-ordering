@@ -5,7 +5,7 @@
 // ================================================================
 
 // ★ここだけ、現在のGAS Webアプリ /exec URLに変更してください。
-const GAS_URL = 'PASTE_YOUR_GAS_WEB_APP_EXEC_URL_HERE';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycby1LWZNRk293NIINd-VkQ7S9JgUZ5lhsxSOguAHCCCWzlHi8zfvUdebUDECULJJJOpu/exec';
 
 const CACHE_TTL_MS = 60 * 1000;
 const REQUEST_TIMEOUT_MS = 30000;
