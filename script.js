@@ -1,805 +1,279 @@
-// ================================================================
-// 在庫管理アプリ フロントエンド
-// 修正版：GASへの通信を「フォームPOST + hidden iframe + postMessage」で実施
-// CORS / JSONP に依存しません。
-// ================================================================
+// =================================================================
+// == 設定項目
+// =================================================================
 
-// ★ここだけ、現在のGAS Webアプリ /exec URLに変更してください。
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby1LWZNRk293NIINd-VkQ7S9JgUZ5lhsxSOguAHCCCWzlHi8zfvUdebUDECULJJJOpu/exec';
+// ▼▼▼▼▼【重要】▼▼▼▼▼
+// あなたのGoogle Apps ScriptのウェブアプリURLをここに貼り付けてください
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbx69RWRZfvTRZ9dbEGlfcVbgQkN6DVl0DeCHrDiMeX6wb0sH_4TUtXP6YxBWdLU67VW/exec';
+// ▲▲▲▲▲【重要】▲▲▲▲▲
 
-const CACHE_TTL_MS = 60 * 1000;
-const REQUEST_TIMEOUT_MS = 30000;
 
-let currentUser = null;
-let sessionToken = '';
-let items = [];
-let selectedStockItem = null;
-let activeInventory = null;
-let inventoryFilter = 'unchecked';
-let orderContext = null;
+// =================================================================
+// == DOM要素の取得
+// =================================================================
+const loader = document.getElementById('loader');
+const loginScreen = document.getElementById('login-screen');
+const mainApp = document.getElementById('main-app');
+const loginIdInput = document.getElementById('login-id');
+const loginBtn = document.getElementById('login-btn');
+const loginError = document.getElementById('login-error');
+const userInfoDiv = document.getElementById('user-info');
+const logoutBtn = document.getElementById('logout-btn');
+const mainMenu = document.getElementById('main-menu');
+const feedbackMessage = document.getElementById('feedback-message');
+const appContent = document.getElementById('app-content');
+const itemListBody = document.getElementById('item-list-body');
+const refreshListBtn = document.getElementById('refresh-list-btn');
+// 入出庫フォーム
+const stockQrInput = document.getElementById('stock-qr-id');
+const stockQuantityInput = document.getElementById('stock-quantity');
+const stockInBtn = document.getElementById('stock-in-btn');
+const stockOutBtn = document.getElementById('stock-out-btn');
+// QR紐付けフォーム
+const linkNewQrInput = document.getElementById('link-new-qr');
+const linkSourceBarcodeInpt = document.getElementById('link-source-barcode');
+const linkQrBtn = document.getElementById('link-qr-btn');
+// 物品登録フォーム
+const regBarcode = document.getElementById('reg-barcode');
+const regItemName = document.getElementById('reg-item-name');
+const regModel = document.getElementById('reg-model');
+const regStock = document.getElementById('reg-stock');
+const regReorderPoint = document.getElementById('reg-reorder-point');
+const regPrice = document.getElementById('reg-price');
+const regSupplier = document.getElementById('reg-supplier');
+const registerItemBtn = document.getElementById('register-item-btn');
 
-const pendingRequests = new Map();
-const $ = (id) => document.getElementById(id);
 
-// ---------------------------------------------------------------
-// GAS通信
-// ---------------------------------------------------------------
-function isAllowedGasOrigin(origin) {
-  return origin === 'https://script.google.com' ||
-         origin === 'https://script.googleusercontent.com';
+// =================================================================
+// == 状態管理
+// =================================================================
+let currentUser = null; // ログイン中のユーザー情報を保持
+
+// =================================================================
+// == API通信
+// =================================================================
+async function callApi(action, payload = {}) {
+    loader.style.display = 'flex';
+    hideFeedback();
+    try {
+        // ログイン情報(auth)をペイロードに自動で追加
+        if (currentUser) {
+            payload.auth = { email: currentUser.email };
+        }
+
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action, payload })
+        });
+        if (!response.ok) throw new Error('ネットワークエラー');
+
+        const result = await response.json();
+        if (result.status === 'error') throw new Error(result.message);
+
+        return result;
+    } catch (error) {
+        showFeedback(`エラー: ${error.message}`, 'error');
+        throw error;
+    } finally {
+        loader.style.display = 'none';
+    }
 }
 
-window.addEventListener('message', (event) => {
-  if (!isAllowedGasOrigin(event.origin)) return;
-
-  const data = event.data;
-  if (!data || data.source !== 'inventory-gas-bridge' || !data.requestId) return;
-
-  const pending = pendingRequests.get(data.requestId);
-  if (!pending) return;
-
-  clearTimeout(pending.timer);
-  pendingRequests.delete(data.requestId);
-
-  if (pending.showLoader) $('loader').style.display = 'none';
-
-  if (!data.result) {
-    pending.reject(new Error('GASから空の応答が返りました。'));
-    return;
-  }
-
-  if (data.result.status === 'error') {
-    pending.reject(new Error(data.result.message || '処理に失敗しました。'));
-    return;
-  }
-
-  pending.resolve(data.result);
-});
-
-function callApi(action, payload = {}, options = {}) {
-  if (!GAS_URL || GAS_URL.includes('PASTE_YOUR')) {
-    return Promise.reject(
-      new Error('script.js の GAS_URL を現在のGAS WebアプリURLへ変更してください。')
-    );
-  }
-
-  const showLoader = options.showLoader !== false;
-  if (showLoader) $('loader').style.display = 'flex';
-
-  return new Promise((resolve, reject) => {
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = GAS_URL;
-    form.target = 'gas-bridge-frame';
-    form.style.display = 'none';
-
-    const addField = (name, value) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    };
-
-    addField('requestId', requestId);
-    addField('action', action);
-    addField('payload', JSON.stringify(payload || {}));
-    addField('token', sessionToken || '');
-
-    const timer = setTimeout(() => {
-      pendingRequests.delete(requestId);
-      if (showLoader) $('loader').style.display = 'none';
-      reject(new Error('GASからの応答がタイムアウトしました。'));
-    }, REQUEST_TIMEOUT_MS);
-
-    pendingRequests.set(requestId, {
-      resolve,
-      reject,
-      timer,
-      showLoader
-    });
-
-    document.body.appendChild(form);
-    form.submit();
-    setTimeout(() => form.remove(), 1000);
-  });
-}
-
-// ---------------------------------------------------------------
-// 共通UI
-// ---------------------------------------------------------------
+// =================================================================
+// == UI操作 / 画面遷移
+// =================================================================
 function showScreen(screenId) {
-  document.querySelectorAll('.screen').forEach(el => el.style.display = 'none');
-  $(screenId).style.display = screenId === 'login-screen' ? 'flex' : 'block';
+    document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+    document.getElementById(screenId).style.display = 'block';
 }
 
-function showAppContent(screenId) {
-  document.querySelectorAll('.app-screen').forEach(el => el.style.display = 'none');
-  $(screenId).style.display = 'block';
-  hideFeedback();
-
-  if (screenId === 'order-history-screen') loadOrderHistory();
-  if (screenId === 'inventory-screen') loadActiveInventory();
+function showAppContent(contentId) {
+    document.querySelectorAll('.app-screen').forEach(s => s.style.display = 'none');
+    document.getElementById(contentId).style.display = 'block';
+    hideFeedback(); // 画面切り替え時にフィードバックを消す
 }
 
 function showFeedback(message, type = 'success') {
-  const box = $('feedback-message');
-  box.textContent = message;
-  box.className = type;
-  box.style.display = 'block';
+    feedbackMessage.textContent = message;
+    feedbackMessage.className = type; // 'success' or 'error'
+    feedbackMessage.style.display = 'block';
 }
 
 function hideFeedback() {
-  $('feedback-message').style.display = 'none';
+    feedbackMessage.style.display = 'none';
 }
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({
-    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-  }[c]));
+function setupMainAppUI() {
+    userInfoDiv.textContent = `${currentUser.name} (${currentUser.role}) さん`;
+    showScreen('main-app');
+    if (currentUser.role === '管理者') {
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = 'block';
+        });
+    }
+    showAppContent('item-list-screen');
+    loadItemList();
 }
 
-// ---------------------------------------------------------------
-// 認証
-// ---------------------------------------------------------------
+// =================================================================
+// == 機能別関数
+// =================================================================
+
+// --- 認証 ---
 async function handleLogin() {
-  const loginId = $('login-id').value.trim();
-  $('login-error').textContent = '';
-
-  if (!loginId) {
-    $('login-error').textContent = 'ログインIDを入力してください。';
-    return;
-  }
-
-  try {
-    const result = await callApi('login', { loginId });
-
-    currentUser = result.data.user;
-    sessionToken = result.data.token;
-
-    sessionStorage.setItem('inventory_user', JSON.stringify(currentUser));
-    sessionStorage.setItem('inventory_token', sessionToken);
-
-    await setupMainApp();
-  } catch (e) {
-    $('login-error').textContent = e.message;
-  }
+    const loginId = loginIdInput.value.trim();
+    if (!loginId) { loginError.textContent = 'ログインIDを入力してください。'; return; }
+    loginError.textContent = '';
+    try {
+        const result = await callApi('login', { loginId });
+        if (result.data.isAuthorized) {
+            currentUser = result.data;
+            sessionStorage.setItem('inventory_user', JSON.stringify(currentUser));
+            setupMainAppUI();
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error) {
+        loginError.textContent = error.message;
+    }
 }
 
 function handleLogout() {
-  currentUser = null;
-  sessionToken = '';
-  sessionStorage.removeItem('inventory_user');
-  sessionStorage.removeItem('inventory_token');
-  localStorage.removeItem('inventory_items_v5');
-  localStorage.removeItem('inventory_items_v5_ts');
-  location.reload();
+    currentUser = null;
+    sessionStorage.removeItem('inventory_user');
+    window.location.reload();
 }
 
-async function setupMainApp() {
-  $('user-info').textContent = `${currentUser.name} (${currentUser.role}) さん`;
-
-  document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.display = currentUser.role === '管理者' ? 'block' : 'none';
-  });
-
-  showScreen('main-app');
-  showAppContent('item-list-screen');
-
-  try {
-    await loadItems(false);
-    renderItemList();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-// ---------------------------------------------------------------
-// 物品一覧
-// ---------------------------------------------------------------
-async function loadItems(force = false) {
-  const cacheKey = 'inventory_items_v5';
-  const cacheTsKey = 'inventory_items_v5_ts';
-
-  if (!force) {
+// --- 物品一覧 ---
+async function loadItemList() {
     try {
-      const raw = localStorage.getItem(cacheKey);
-      const ts = Number(localStorage.getItem(cacheTsKey) || 0);
-
-      if (raw && Date.now() - ts < CACHE_TTL_MS) {
-        items = JSON.parse(raw);
-        return;
-      }
-    } catch (_) {}
-  }
-
-  const result = await callApi('get_item_list', { forceRefresh: force });
-  items = result.data || [];
-
-  try {
-    localStorage.setItem(cacheKey, JSON.stringify(items));
-    localStorage.setItem(cacheTsKey, String(Date.now()));
-  } catch (_) {}
+        const result = await callApi('get_item_list');
+        itemListBody.innerHTML = '';
+        if (result.data.length === 0) {
+            itemListBody.innerHTML = '<tr><td colspan="4">物品が登録されていません。</td></tr>';
+            return;
+        }
+        result.data.forEach(item => {
+            const row = `<tr>
+                <td>${item.itemName || ''}</td>
+                <td>${item.model || ''}</td>
+                <td>${item.stock || 0}</td>
+                <td>${item.reorderPoint || 0}</td>
+            </tr>`;
+            itemListBody.innerHTML += row;
+        });
+    } catch (error) { /* callApi内でエラー処理済み */ }
 }
 
-function renderItemList() {
-  const query = $('item-search').value.trim().toLowerCase();
-  const tbody = $('item-list-body');
-
-  const filtered = items.filter(item =>
-    `${item.itemName || ''} ${item.model || ''}`.toLowerCase().includes(query)
-  );
-
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="6">該当する物品がありません。</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = filtered.map(item => {
-    const low = Number(item.stock || 0) < Number(item.reorderPoint || 0);
-
-    return `
-      <tr class="${low ? 'low-stock-row' : ''}">
-        <td>${escapeHtml(item.itemName)}</td>
-        <td>${escapeHtml(item.model)}</td>
-        <td>${Number(item.stock || 0)}</td>
-        <td>${Number(item.reorderPoint || 0)}</td>
-        <td>${Number(item.orderedQuantity || 0)}</td>
-        <td>
-          <button class="open-order-btn" data-ref="${escapeHtml(item.itemRef)}">
-            発注カードを開く
-          </button>
-        </td>
-      </tr>`;
-  }).join('');
-
-  tbody.querySelectorAll('.open-order-btn').forEach(btn => {
-    btn.addEventListener('click', () => openOrderCard(btn.dataset.ref));
-  });
-}
-
-// ---------------------------------------------------------------
-// 入出庫
-// ---------------------------------------------------------------
-function renderStockSearchResults() {
-  const query = $('stock-item-search').value.trim().toLowerCase();
-  const box = $('stock-search-results');
-
-  selectedStockItem = null;
-  $('selected-stock-item').style.display = 'none';
-
-  if (!query) {
-    box.innerHTML = '';
-    box.style.display = 'none';
-    return;
-  }
-
-  const matches = items.filter(item =>
-    `${item.itemName || ''} ${item.model || ''}`.toLowerCase().includes(query)
-  ).slice(0, 20);
-
-  if (!matches.length) {
-    box.innerHTML = '<div class="small-note" style="padding:10px">該当する物品がありません。</div>';
-    box.style.display = 'block';
-    return;
-  }
-
-  box.innerHTML = matches.map(item => `
-    <button class="search-result-item" data-ref="${escapeHtml(item.itemRef)}">
-      <strong>${escapeHtml(item.itemName)}</strong>
-      ${item.model ? ` / ${escapeHtml(item.model)}` : ''}
-      <span class="small-note">　現在庫：${Number(item.stock || 0)}</span>
-    </button>
-  `).join('');
-
-  box.style.display = 'block';
-
-  box.querySelectorAll('.search-result-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      selectedStockItem = items.find(x => x.itemRef === btn.dataset.ref) || null;
-      if (!selectedStockItem) return;
-
-      $('selected-stock-item').innerHTML = `
-        <strong>${escapeHtml(selectedStockItem.itemName)}</strong>
-        ${selectedStockItem.model ? ` / ${escapeHtml(selectedStockItem.model)}` : ''}
-        <br><span class="small-note">現在庫：${Number(selectedStockItem.stock || 0)}</span>`;
-
-      $('selected-stock-item').style.display = 'block';
-      $('stock-search-results').style.display = 'none';
-      $('stock-item-search').value =
-        `${selectedStockItem.itemName}${selectedStockItem.model ? ' / ' + selectedStockItem.model : ''}`;
-    });
-  });
-}
-
+// --- 入出庫 ---
 async function handleStockUpdate(type) {
-  if (!selectedStockItem) {
-    showFeedback('物品を選択してください。', 'error');
-    return;
-  }
+    const qrId = stockQrInput.value.trim();
+    const quantity = parseInt(stockQuantityInput.value, 10);
+    if (!qrId) { showFeedback('QR/バーコードを入力してください。', 'error'); return; }
+    if (isNaN(quantity) || quantity <= 0) { showFeedback('正しい数量を入力してください。', 'error'); return; }
 
-  const quantity = Number($('stock-quantity').value);
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    showFeedback('数量を正しく入力してください。', 'error');
-    return;
-  }
+    try {
+        const result = await callApi('stock_update', { qrId, type, quantity });
 
-  try {
-    const result = await callApi('stock_update', {
-      itemRef: selectedStockItem.itemRef,
-      itemName: selectedStockItem.itemName,
-      model: selectedStockItem.model || '',
-      type,
-      quantity
-    });
+        let message = result.message || `${type}処理が完了しました。`;
+        if (result.orderRequired) {
+            message += '【！】この物品は発注が必要です。';
+        }
+        showFeedback(message, 'success');
 
-    showFeedback(result.message || `${type}が完了しました。`, 'success');
+        stockQrInput.value = ''; // 入力欄をクリア
+        stockQuantityInput.value = '1';
+        stockQrInput.focus(); // 次のスキャンのためにフォーカス
 
-    await loadItems(true);
-    renderItemList();
+    } catch (error) { /* callApi内でエラー処理済み */ }
+}
 
-    selectedStockItem =
-      items.find(x => x.itemRef === selectedStockItem.itemRef) || null;
 
-    $('stock-quantity').value = '1';
-
-    if (result.orderRequired && result.orderPreview) {
-      showFeedback(
-        '在庫を更新しました。発注点を下回ったため発注カードを開きます。',
-        'info'
-      );
-      showOrderModal(result.orderPreview);
+// --- QR紐付け ---
+async function handleLinkQr() {
+    const newQrId = linkNewQrInput.value.trim();
+    const sourceBarcode = linkSourceBarcodeInpt.value.trim();
+    if (!newQrId || !sourceBarcode) {
+        showFeedback('2つのコードを両方入力してください。', 'error');
+        return;
     }
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
+    try {
+        const result = await callApi('copy_item_info', { newQrId, sourceBarcode });
+        showFeedback(result.message, 'success');
+        linkNewQrInput.value = '';
+        linkSourceBarcodeInpt.value = '';
+    } catch (error) { /* callApi内でエラー処理済み */ }
 }
 
-// ---------------------------------------------------------------
-// 発注
-// ---------------------------------------------------------------
-async function openOrderCard(itemRef) {
-  const item = items.find(x => x.itemRef === itemRef);
-  if (!item) {
-    showFeedback('物品が見つかりません。', 'error');
-    return;
-  }
 
-  try {
-    const result = await callApi('get_order_card', {
-      itemRef,
-      itemName: item.itemName,
-      model: item.model || ''
-    });
+// --- 物品登録 ---
+async function handleRegisterItem() {
+    const payload = {
+        barcode: regBarcode.value.trim(),
+        itemName: regItemName.value.trim(),
+        model: regModel.value.trim(),
+        stock: parseInt(regStock.value, 10),
+        reorderPoint: parseInt(regReorderPoint.value, 10),
+        price: parseFloat(regPrice.value),
+        supplierEmail: regSupplier.value.trim()
+    };
+    if (!payload.barcode) { showFeedback('製品バーコードは必須です。', 'error'); return; }
 
-    showOrderModal(result.data);
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
+    try {
+        const result = await callApi('item_register', payload);
+        showFeedback(result.message, 'success');
+        // フォームをクリア
+        document.querySelector('#register-item-screen').querySelectorAll('input').forEach(input => input.value = '');
+        regStock.value = 0; regReorderPoint.value = 0; regPrice.value = 0;
+    } catch (error) { /* callApi内でエラー処理済み */ }
 }
 
-function showOrderModal(preview) {
-  orderContext = {
-    itemRef: preview.itemRef,
-    itemName: preview.itemName,
-    model: preview.model || ''
-  };
 
-  $('order-item-summary').innerHTML = `
-    <strong>${escapeHtml(preview.itemName)}</strong>
-    ${preview.model ? ` / ${escapeHtml(preview.model)}` : ''}
-    <br><span class="small-note">
-      現在庫：${Number(preview.stock || 0)}
-      / 発注点：${Number(preview.reorderPoint || 0)}
-      / 定数在庫：${Number(preview.parLevel || 0)}
-      / 発注中：${Number(preview.orderedQuantity || 0)}
-    </span>`;
-
-  $('order-to').value = preview.to || '';
-  $('order-subject').value = preview.subject || '';
-  $('order-quantity').value = Number(preview.quantity || 1);
-  $('order-body').value = preview.body || '';
-
-  $('order-modal').style.display = 'flex';
-}
-
-async function refreshOrderPreviewForQuantity() {
-  if (!orderContext) return;
-
-  const quantity = Number($('order-quantity').value);
-  if (!Number.isFinite(quantity) || quantity <= 0) return;
-
-  try {
-    const result = await callApi(
-      'get_order_card',
-      { ...orderContext, requestedQuantity: quantity },
-      { showLoader: false }
-    );
-
-    $('order-subject').value = result.data.subject || '';
-    $('order-body').value = result.data.body || '';
-  } catch (_) {}
-}
-
-async function sendOrder() {
-  if (!orderContext) return;
-
-  const quantity = Number($('order-quantity').value);
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    showFeedback('発注数量を正しく入力してください。', 'error');
-    return;
-  }
-
-  if (!confirm(`${quantity}個を発注します。よろしいですか？`)) return;
-
-  try {
-    const result = await callApi('send_order', {
-      ...orderContext,
-      quantity
-    });
-
-    $('order-modal').style.display = 'none';
-    orderContext = null;
-
-    showFeedback(result.message || '発注メールを送信しました。', 'success');
-
-    await loadItems(true);
-    renderItemList();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-// ---------------------------------------------------------------
-// 発注履歴
-// ---------------------------------------------------------------
-async function loadOrderHistory() {
-  const box = $('order-history-list');
-  box.innerHTML = '<p>読み込み中...</p>';
-
-  try {
-    const result = await callApi('get_order_history');
-    const rows = result.data || [];
-
-    if (!rows.length) {
-      box.innerHTML = '<p>発注履歴はありません。</p>';
-      return;
-    }
-
-    box.innerHTML = rows.map(row => `
-      <div class="order-history-card">
-        <strong>${escapeHtml(row.itemName)}</strong>
-        ${row.model ? ` / ${escapeHtml(row.model)}` : ''}
-        <div class="order-history-meta">
-          ${escapeHtml(row.orderDate)}　
-          ${Number(row.quantity || 0)}個　
-          ${escapeHtml(row.status)}
-        </div>
-        ${row.status === '注文済み'
-          ? `<button class="cancel-order-btn danger-btn" data-history="${row.historyId}">キャンセル</button>`
-          : ''}
-      </div>
-    `).join('');
-
-    box.querySelectorAll('.cancel-order-btn').forEach(btn => {
-      btn.addEventListener('click', () =>
-        cancelOrder(Number(btn.dataset.history))
-      );
-    });
-  } catch (e) {
-    box.innerHTML = `<p class="error-message">${escapeHtml(e.message)}</p>`;
-  }
-}
-
-async function cancelOrder(historyId) {
-  if (!confirm('この発注をキャンセルし、キャンセルメールを送信しますか？')) return;
-
-  try {
-    const result = await callApi('cancel_order', { historyId });
-
-    showFeedback(result.message || 'キャンセルしました。', 'success');
-
-    await loadOrderHistory();
-    await loadItems(true);
-    renderItemList();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-// ---------------------------------------------------------------
-// 棚卸し
-// ---------------------------------------------------------------
-async function loadActiveInventory() {
-  try {
-    const result = await callApi('get_active_inventory');
-    activeInventory = result.data || null;
-
-    if (!activeInventory) {
-      $('inventory-no-session').style.display = 'block';
-      $('inventory-active').style.display = 'none';
-      return;
-    }
-
-    $('inventory-no-session').style.display = 'none';
-    $('inventory-active').style.display = 'block';
-    renderInventory();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-async function startInventory() {
-  if (!confirm('現在のシステム在庫を基準に棚卸しを開始します。よろしいですか？')) return;
-
-  try {
-    const result = await callApi('start_inventory');
-
-    activeInventory = result.data;
-    inventoryFilter = 'unchecked';
-
-    $('inventory-no-session').style.display = 'none';
-    $('inventory-active').style.display = 'block';
-
-    renderInventory();
-
-    showFeedback(
-      '棚卸しを開始しました。ブラウザを閉じても続きから再開できます。',
-      'success'
-    );
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-function renderInventory() {
-  if (!activeInventory) return;
-
-  const all = activeInventory.items || [];
-  const checked = all.filter(x => x.checked).length;
-  const diff = all.filter(x => x.checked && Number(x.difference || 0) !== 0).length;
-  const percent = all.length ? Math.round((checked / all.length) * 100) : 0;
-
-  $('inventory-progress-text').textContent =
-    `${checked} / ${all.length}（${percent}%）`;
-
-  $('inventory-diff-text').textContent = `差異 ${diff}件`;
-  $('inventory-progress-bar').style.width = `${percent}%`;
-
-  const query = $('inventory-search').value.trim().toLowerCase();
-
-  let visible = all.filter(item =>
-    `${item.itemName || ''} ${item.model || ''}`.toLowerCase().includes(query)
-  );
-
-  if (inventoryFilter === 'unchecked') {
-    visible = visible.filter(x => !x.checked);
-  } else if (inventoryFilter === 'diff') {
-    visible = visible.filter(x => x.checked && Number(x.difference || 0) !== 0);
-  }
-
-  if (!visible.length) {
-    $('inventory-list').innerHTML =
-      '<div class="panel">該当する物品はありません。</div>';
-    return;
-  }
-
-  $('inventory-list').innerHTML = visible.map(item => `
-    <div class="inventory-card ${item.checked ? 'checked' : ''} ${
-      item.checked && Number(item.difference || 0) !== 0 ? 'diff' : ''
-    }">
-      <div class="inventory-card-title">
-        <div>
-          <strong>${escapeHtml(item.itemName)}</strong>
-          ${item.model ? ` / ${escapeHtml(item.model)}` : ''}
-        </div>
-        <div class="small-note">
-          システム在庫：${Number(item.expectedStock || 0)}
-          ${item.checked ? ` / 差異：${Number(item.difference || 0)}` : ''}
-        </div>
-      </div>
-
-      <div class="inventory-input-row">
-        <div>
-          <label>実在庫</label>
-          <input class="inventory-actual-input"
-                 type="number"
-                 min="0"
-                 data-ref="${escapeHtml(item.itemRef)}"
-                 value="${item.checked ? Number(item.actualStock || 0) : ''}">
-        </div>
-
-        <button class="save-inventory-btn"
-                data-ref="${escapeHtml(item.itemRef)}">
-          ${item.checked ? '更新' : '確定'}
-        </button>
-      </div>
-    </div>
-  `).join('');
-
-  $('inventory-list').querySelectorAll('.save-inventory-btn').forEach(btn => {
-    btn.addEventListener('click', () => saveInventoryItem(btn.dataset.ref));
-  });
-}
-
-async function saveInventoryItem(itemRef) {
-  const item = activeInventory.items.find(x => x.itemRef === itemRef);
-  if (!item) return;
-
-  const input = document.querySelector(
-    `.inventory-actual-input[data-ref="${CSS.escape(itemRef)}"]`
-  );
-
-  const actualStock = Number(input?.value);
-  if (!Number.isFinite(actualStock) || actualStock < 0) {
-    showFeedback('実在庫を0以上の数値で入力してください。', 'error');
-    return;
-  }
-
-  try {
-    const result = await callApi('save_inventory_item', {
-      sessionId: activeInventory.sessionId,
-      itemRef,
-      itemName: item.itemName,
-      model: item.model || '',
-      actualStock
-    });
-
-    Object.assign(item, result.data);
-    renderInventory();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-async function completeInventory() {
-  if (!activeInventory) return;
-
-  const remaining = activeInventory.items.filter(x => !x.checked).length;
-  if (remaining > 0) {
-    showFeedback(
-      `未確認の物品が${remaining}件あります。すべて確認してから完了してください。`,
-      'error'
-    );
-    return;
-  }
-
-  if (!confirm('棚卸し結果を現在庫へ反映して完了します。よろしいですか？')) return;
-
-  try {
-    const result = await callApi('complete_inventory', {
-      sessionId: activeInventory.sessionId
-    });
-
-    showFeedback(result.message || '棚卸しを完了しました。', 'success');
-
-    activeInventory = null;
-    await loadItems(true);
-    renderItemList();
-    await loadActiveInventory();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-// ---------------------------------------------------------------
-// 物品登録
-// ---------------------------------------------------------------
-async function registerItem() {
-  const payload = {
-    itemName: $('reg-item-name').value.trim(),
-    model: $('reg-model').value.trim(),
-    stock: Number($('reg-stock').value || 0),
-    reorderPoint: Number($('reg-reorder-point').value || 0),
-    parLevel: Number($('reg-par-level').value || 0),
-    price: Number($('reg-price').value || 0),
-    supplierEmail: $('reg-supplier').value.trim()
-  };
-
-  if (!payload.itemName) {
-    showFeedback('物品名は必須です。', 'error');
-    return;
-  }
-
-  try {
-    const result = await callApi('item_register', payload);
-
-    showFeedback(result.message || '登録しました。', 'success');
-
-    $('reg-item-name').value = '';
-    $('reg-model').value = '';
-    $('reg-stock').value = '0';
-    $('reg-reorder-point').value = '0';
-    $('reg-par-level').value = '0';
-    $('reg-price').value = '0';
-    $('reg-supplier').value = '';
-
-    await loadItems(true);
-    renderItemList();
-  } catch (e) {
-    showFeedback(e.message, 'error');
-  }
-}
-
-// ---------------------------------------------------------------
-// イベント
-// ---------------------------------------------------------------
+// =================================================================
+// == イベントリスナーの設定
+// =================================================================
 document.addEventListener('DOMContentLoaded', () => {
-  $('login-btn').addEventListener('click', handleLogin);
-  $('login-id').addEventListener('keydown', e => {
-    if (e.key === 'Enter') handleLogin();
-  });
-
-  $('logout-btn').addEventListener('click', handleLogout);
-
-  $('main-menu').addEventListener('click', e => {
-    const btn = e.target.closest('button[data-screen]');
-    if (btn) showAppContent(btn.dataset.screen);
-  });
-
-  $('item-search').addEventListener('input', renderItemList);
-
-  $('refresh-list-btn').addEventListener('click', async () => {
-    try {
-      await loadItems(true);
-      renderItemList();
-      showFeedback('物品一覧を更新しました。', 'success');
-    } catch (e) {
-      showFeedback(e.message, 'error');
+    const storedUser = sessionStorage.getItem('inventory_user');
+    if (storedUser) {
+        currentUser = JSON.parse(storedUser);
+        setupMainAppUI();
+    } else {
+        showScreen('login-screen');
     }
-  });
+});
 
-  $('stock-item-search').addEventListener('input', renderStockSearchResults);
+// --- 認証 ---
+loginBtn.addEventListener('click', handleLogin);
+loginIdInput.addEventListener('keypress', (e) => e.key === 'Enter' && handleLogin());
+logoutBtn.addEventListener('click', handleLogout);
 
-  $('stock-in-btn').addEventListener('click', () => handleStockUpdate('入庫'));
-  $('stock-out-btn').addEventListener('click', () => handleStockUpdate('出庫'));
-
-  $('close-order-modal').addEventListener('click', () => {
-    $('order-modal').style.display = 'none';
-    orderContext = null;
-  });
-
-  $('order-quantity').addEventListener('change', refreshOrderPreviewForQuantity);
-  $('send-order-btn').addEventListener('click', sendOrder);
-
-  $('refresh-order-history-btn').addEventListener('click', loadOrderHistory);
-
-  $('start-inventory-btn').addEventListener('click', startInventory);
-  $('refresh-inventory-btn').addEventListener('click', loadActiveInventory);
-  $('inventory-search').addEventListener('input', renderInventory);
-
-  $('filter-unchecked-btn').addEventListener('click', () => {
-    inventoryFilter = 'unchecked';
-    renderInventory();
-  });
-
-  $('filter-diff-btn').addEventListener('click', () => {
-    inventoryFilter = 'diff';
-    renderInventory();
-  });
-
-  $('filter-all-btn').addEventListener('click', () => {
-    inventoryFilter = 'all';
-    renderInventory();
-  });
-
-  $('complete-inventory-btn').addEventListener('click', completeInventory);
-  $('register-item-btn').addEventListener('click', registerItem);
-
-  const savedUser = sessionStorage.getItem('inventory_user');
-  const savedToken = sessionStorage.getItem('inventory_token');
-
-  if (savedUser && savedToken) {
-    try {
-      currentUser = JSON.parse(savedUser);
-      sessionToken = savedToken;
-      setupMainApp();
-    } catch (_) {
-      handleLogout();
+// --- ナビゲーション ---
+mainMenu.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON' && e.target.dataset.screen) {
+        showAppContent(e.target.dataset.screen);
     }
-  } else {
-    showScreen('login-screen');
+});
+
+// --- 各機能の実行ボタン ---
+refreshListBtn.addEventListener('click', loadItemList);
+stockInBtn.addEventListener('click', () => handleStockUpdate('入庫'));
+stockOutBtn.addEventListener('click', () => handleStockUpdate('出庫'));
+linkQrBtn.addEventListener('click', handleLinkQr);
+registerItemBtn.addEventListener('click', handleRegisterItem);
+
+// ----------------------------------------------------
+// ▼▼▼ 以下をscript.jsの末尾に貼り付け ▼▼▼
+// ----------------------------------------------------
+const testBtn = document.getElementById('test-btn');
+testBtn.addEventListener('click', async () => {
+  try {
+    const result = await callApi('test_connection');
+    if (result.status === 'success') {
+      alert('バックエンドとの接続に成功しました！🎉');
+    }
+  } catch (error) {
+    alert('テスト接続に失敗しました。コンソールを確認してください。');
   }
 });
