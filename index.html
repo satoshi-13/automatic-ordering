@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v6.1</title>
+  <title>在庫管理アプリ v6.2</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
@@ -34,7 +34,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
         <span class="text-lg font-bold">ホーム</span>
       </button>
-      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v6.1</span>
+      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v6.2</span>
     </div>
     <div class="text-right">
       <p id="user-name" class="text-sm"></p>
@@ -45,7 +45,7 @@
   <main id="main-root" class="p-4 md:p-6">
     <!-- Login -->
     <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.1</h2>
+      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.2</h2>
       <div class="space-y-6">
         <div class="p-4 border rounded-lg">
           <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
@@ -67,6 +67,9 @@
         <button id="new-item-button" class="col-span-2 bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-lg text-lg font-bold">新規物品登録</button>
         <button id="order-history-button" class="col-span-2 bg-gray-500 hover:bg-gray-600 text-white p-6 rounded-lg text-lg font-bold">発注履歴</button>
         <button id="cart-button" class="col-span-2 bg-pink-500 hover:bg-pink-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">発注カートを開く</button>
+        
+        <!-- ★ 新規追加: 月次レポートボタン -->
+        <button id="report-button" class="col-span-2 bg-emerald-500 hover:bg-emerald-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">月次レポート(CSV)出力</button>
       </div>
     </div>
 
@@ -144,6 +147,18 @@
       </div>
     </div>
 
+    <!-- ★ 新規追加: レポート画面 -->
+    <div id="view-report" class="view">
+      <h2 class="text-xl font-bold mb-4 text-center">月次レポート（CSV出力）</h2>
+      <p class="text-sm text-gray-600 mb-6 text-center">指定した月の入出庫・発注履歴と金額を集計したCSVファイルをダウンロードします。</p>
+      <div class="mb-6 p-4 border rounded-lg bg-gray-50">
+        <label class="block text-sm font-bold text-gray-700 mb-2">対象月を選択</label>
+        <input type="month" id="report-month-input" class="w-full p-4 border-2 rounded-lg text-xl text-center focus:ring-emerald-500 focus:border-emerald-500" />
+      </div>
+      <button id="download-report-button" class="w-full bg-emerald-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-emerald-600">CSVダウンロード</button>
+      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
+    </div>
+
     <!-- Done -->
     <div id="view-action-complete" class="view text-center py-12">
       <svg class="mx-auto h-16 w-16 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -151,7 +166,7 @@
       <p id="complete-sub-message" class="text-gray-600 mt-2 leading-relaxed text-sm"></p>
     </div>
 
-    <!-- Item list (v6.1 超高速HTML側キャッシュ方式) -->
+    <!-- Item list -->
     <div id="view-item-list" class="view">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-xl font-bold">物品一覧</h2>
@@ -168,7 +183,7 @@
       <button class="back-button mt-6 w-full text-center text-gray-600">戻る</button>
     </div>
 
-    <!-- Inventory count (v6.1 1つ戻るボタン追加) -->
+    <!-- Inventory count -->
     <div id="view-inventory-count" class="view">
       <h2 class="text-xl font-bold text-center mb-2">棚卸し作業</h2>
       <p id="inventory-count-progress" class="text-center text-sm text-gray-500 mb-2"></p>
@@ -227,14 +242,14 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const APP_VERSION = "2026.03.24.r6.1";
-  console.log('=== 在庫管理アプリ v6.1 起動 ===');
+  const APP_VERSION = "2026.09.21.r6.2";
+  console.log('=== 在庫管理アプリ v6.2 起動 ===');
   
   // =========================================================
   // 【重要】最新のGAS Web App URL（/exec）に変更してください
   // =========================================================
-  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyDBIw4wGWagJgTUgfUfUMrWRcwl640UctwACfd1Ze8l_vJvrETtrVzQ5k66DkP7V5i/exec";
-  const CACHE_KEY_ITEMS = "inventory_app_items_cache_v6"; // ★ブラウザ側キャッシュ用キー
+  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyfriRe4F92_r_QAnRFA3G7noaq0LLrOipU13YosBRxAxxqhdM1jHKgGOF6OqVzUmBa/exec";
+  const CACHE_KEY_ITEMS = "inventory_app_items_cache_v6";
   
   const state = { user:null, currentView:null, historyStack:[], itemList:[], cartItems:[], stockUpdate:{}, otherUserInfo:{}, inventoryCount:{ items:[], currentIndex:0, currentItemId:null } };
   let currentEditItemId = null;
@@ -269,7 +284,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const goBack = ()=>{ const p = state.historyStack.pop(); if(p) showView(p,true); };
   const goHome = ()=>{ state.historyStack=[]; showView("view-home-user"); };
   const toggleLoading = on => dom.loading.classList.toggle("hidden", !on);
-  const clearCache = () => sessionStorage.removeItem(CACHE_KEY_ITEMS); // ★キャッシュ削除処理
+  const clearCache = () => sessionStorage.removeItem(CACHE_KEY_ITEMS);
   
   let alertCb=null, confirmCb=null;
   const showAlert = (m, cb=null)=>{ document.getElementById("alert-message").innerHTML=String(m).replace(/\n/g, '<br>'); dom.modals.alert.classList.remove("hidden"); alertCb = cb; };
@@ -279,7 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // API通信
   const callGasApi = async (action, payload = {}, retryCount = 0) => {
-    const readActions = ['get_item_list', 'get_departments', 'get_supplier_emails', 'get_cart', 'get_order_history', 'get_inventory_progress'];
+    const readActions = ['get_item_list', 'get_departments', 'get_supplier_emails', 'get_cart', 'get_order_history', 'get_inventory_progress', 'get_monthly_report'];
     const maxRetries = readActions.includes(action) ? 1 : 0;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -332,6 +347,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.user = res.data;
         dom.userName.textContent = state.user.name;
         document.getElementById("cart-button").classList.toggle("hidden", state.user.role !== '管理者');
+        document.getElementById("report-button").classList.toggle("hidden", state.user.role !== '管理者'); // ★レポートボタン制御
         if(["管理者","使用者"].includes(state.user.role)) showView("view-home-user");
         else { showView("view-home-other-1"); loadDepartments(); }
       } else {
@@ -344,17 +360,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadDepartments=async()=>{ const res=await callGasApi("get_departments"); if(res) { const list=document.getElementById("department-list"); list.innerHTML=""; res.data.forEach(n=>{ const b=document.createElement("button"); b.textContent=n; b.className="bg-white border px-4 py-2 rounded-full hover:bg-gray-100"; b.onclick=()=>{ state.otherUserInfo.department=n; showView("view-home-other-2"); }; list.appendChild(b); }); }};
   const loadSupplierEmails=async()=>{ const res=await callGasApi("get_supplier_emails"); if(res){ const dl=document.getElementById("supplier-email-list"); dl.innerHTML=""; res.data.forEach(e=>{ const o=document.createElement("option"); o.value=e; dl.appendChild(o); }); }};
 
-  // ★ 物品一覧 (HTML側キャッシュ方式: SWR で爆速化)
+  // 物品一覧
   const loadItems = async (force = false) => {
     showView("view-item-list");
     const cached = sessionStorage.getItem(CACHE_KEY_ITEMS);
     
-    // キャッシュがあれば即表示(0秒)
     if (cached && !force) {
       state.itemList = JSON.parse(cached);
       renderItems();
-      
-      // 裏側でこっそり最新化
       callGasApi("get_item_list").then(res => {
         if(res && res.data) {
           state.itemList = res.data;
@@ -363,7 +376,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     } else {
-      // キャッシュなし or 強制更新時
       toggleLoading(true);
       const res = await callGasApi("get_item_list");
       toggleLoading(false);
@@ -432,18 +444,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Quantity / Update
   document.getElementById("submit-stock-update").addEventListener("click", async () => {
     const qty = parseInt(document.getElementById("quantity-input").value, 10);
     if(!qty || qty<=0) return showAlert("正しい数量を入力してください");
     toggleLoading(true);
     const res = await callGasApi("stock_update", { itemId: state.stockUpdate.itemId, type: state.stockUpdate.action, quantity: qty, department: state.otherUserInfo.department, phs: state.otherUserInfo.phs });
     toggleLoading(false);
-    if(res) { 
-      clearCache(); // ★更新時はキャッシュ破棄
-      document.getElementById("quantity-input").value=""; 
-      showDoneAnd("更新完了", res.message, () => loadItems(true)); 
-    } 
+    if(res) { clearCache(); document.getElementById("quantity-input").value=""; showDoneAnd("更新完了", res.message, () => loadItems(true)); } 
   });
 
   document.getElementById("edit-item-save").addEventListener("click", async () => {
@@ -457,13 +464,10 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleLoading(true);
     const res = await callGasApi("update_item", payload);
     toggleLoading(false);
-    if(res) { 
-      clearCache(); // ★更新時はキャッシュ破棄
-      dom.modals.edit.classList.add("hidden"); showAlert("更新しました", () => loadItems(true)); 
-    }
+    if(res) { clearCache(); dom.modals.edit.classList.add("hidden"); showAlert("更新しました", () => loadItems(true)); }
   });
 
-  // ★ Inventory Resume (棚卸し再開機能 ＋ 1つ戻るボタン)
+  // 棚卸し
   document.getElementById("inventory-count-button").addEventListener("click", async () => {
     toggleLoading(true);
     const [itemsRes, progRes] = await Promise.all([callGasApi("get_item_list"), callGasApi("get_inventory_progress")]);
@@ -479,7 +483,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const displayCurrentInventoryItem = () => {
     const { items, currentIndex } = state.inventoryCount;
     if(currentIndex >= items.length) {
-      callGasApi("save_inventory_progress", { currentIndex: 0 }); // 完了したらリセット(非同期)
+      callGasApi("save_inventory_progress", { currentIndex: 0 });
       showDoneAnd("棚卸し完了", "全ての物品の確認が終わりました。", goHome); return; 
     }
     const item = items[currentIndex];
@@ -501,9 +505,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const res = await callGasApi("stock_update", { itemId: state.inventoryCount.currentItemId, type: "棚卸修正", quantity: qty, isCorrection: true });
     
     if(res) {
-      clearCache(); // ★在庫更新なのでキャッシュ破棄
+      clearCache();
       const nextIndex = state.inventoryCount.currentIndex + 1;
-      await callGasApi("save_inventory_progress", { currentIndex: nextIndex }); // 進捗を裏で保存
+      await callGasApi("save_inventory_progress", { currentIndex: nextIndex });
       toggleLoading(false);
       state.inventoryCount.currentIndex = nextIndex;
       if(res.message.includes('カート')) showAlert(res.message, displayCurrentInventoryItem);
@@ -513,12 +517,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ★ 追加機能：棚卸し時に「1つ前に戻る」
   document.getElementById("inventory-prev-button").addEventListener("click", async () => {
     if (state.inventoryCount.currentIndex > 0) {
       const prevIndex = state.inventoryCount.currentIndex - 1;
       toggleLoading(true);
-      await callGasApi("save_inventory_progress", { currentIndex: prevIndex }); // 戻った状態も保存
+      await callGasApi("save_inventory_progress", { currentIndex: prevIndex });
       toggleLoading(false);
       state.inventoryCount.currentIndex = prevIndex;
       displayCurrentInventoryItem();
@@ -527,7 +530,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.getElementById("inventory-back-button").addEventListener("click", () => goHome()); // 中断しても再開できる
+  document.getElementById("inventory-back-button").addEventListener("click", () => goHome());
 
   // Cart
   document.getElementById("cart-button").addEventListener("click", async () => {
@@ -578,6 +581,48 @@ document.addEventListener("DOMContentLoaded", () => {
       toggleLoading(false);
       if(res) { clearCache(); showDoneAnd("一括発注 完了", res.message, goHome); }
     });
+  });
+
+  // ★ 新規追加: 月次レポート（CSV出力）
+  document.getElementById("report-button").addEventListener("click", () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    document.getElementById("report-month-input").value = `${yyyy}-${mm}`;
+    showView("view-report");
+  });
+
+  document.getElementById("download-report-button").addEventListener("click", async () => {
+    const month = document.getElementById("report-month-input").value;
+    if(!month) return showAlert("対象月を選択してください。");
+    
+    toggleLoading(true);
+    const res = await callGasApi("get_monthly_report", { targetMonth: month });
+    toggleLoading(false);
+    
+    if(res && res.data) {
+      if(res.data.length === 0) return showAlert("指定した月のデータはありません。");
+      
+      const headers = ["日時", "物品ID", "物品名", "種別", "数量", "単価", "合計金額", "担当者", "部署"];
+      let csvContent = "\uFEFF" + headers.join(",") + "\n"; // ★ Excelで文字化けしないBOM付きUTF-8
+      
+      res.data.forEach(r => {
+        // カンマ等の誤作動を防ぐため文字列はダブルクォーテーションで囲む
+        const row = [ r.date, r.itemId, `"${r.itemName}"`, r.type, r.quantity, r.price, r.totalAmount, `"${r.user}"`, `"${r.department}"` ];
+        csvContent += row.join(",") + "\n";
+      });
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `在庫履歴レポート_${month}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showDoneAnd("出力完了", "CSVファイルのダウンロードを開始しました。", goHome);
+    }
   });
 
   // History
