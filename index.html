@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v5.12</title>
+  <title>在庫管理アプリ v5.12.2</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -37,7 +37,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
         <span class="text-lg font-bold">ホーム</span>
       </button>
-      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v5.12</span>
+      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v5.12.2</span>
     </div>
     <div class="text-right">
       <p id="user-name" class="text-sm"></p>
@@ -47,7 +47,7 @@
 
   <main id="main-root" class="p-4 md:p-6">
     <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v5.12</h2>
+      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v5.12.2</h2>
       <div class="space-y-6">
         <div class="p-4 border rounded-lg">
           <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
@@ -70,6 +70,9 @@
         <button id="cart-button" class="col-span-2 bg-pink-500 hover:bg-pink-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">
           発注カートを開く
           <span id="cart-badge" class="hidden absolute top-3 right-3 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">!</span>
+        </button>
+        <button id="report-button" class="col-span-2 bg-emerald-500 hover:bg-emerald-600 text-white p-6 rounded-lg text-lg font-bold hidden">
+          月次レポート（CSV）出力
         </button>
       </div>
     </div>
@@ -153,6 +156,23 @@
         <button id="submit-cart-button" class="w-full bg-red-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-red-600">一括発注する</button>
         <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
       </div>
+    </div>
+
+    <div id="view-report" class="view">
+      <h2 class="text-xl font-bold mb-4 text-center">月次レポート（CSV出力）</h2>
+      <p class="text-sm text-gray-600 mb-6 text-center">
+        指定した月の入出庫・棚卸修正・発注履歴を、物品ごとの単価・金額付きCSVで出力します。
+      </p>
+      <div class="mb-6 p-4 border rounded-lg bg-gray-50">
+        <label class="block text-sm font-bold text-gray-700 mb-2">対象月を選択</label>
+        <input type="month" id="report-month-input"
+          class="w-full p-4 border-2 rounded-lg text-xl text-center focus:ring-emerald-500 focus:border-emerald-500" />
+      </div>
+      <button id="download-report-button"
+        class="w-full bg-emerald-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-emerald-600">
+        CSVダウンロード
+      </button>
+      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
     </div>
 
     <div id="view-action-complete" class="view text-center py-12">
@@ -268,8 +288,8 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const APP_VERSION = "2026.09.15.r5.12";
-  console.log('=== 在庫管理アプリ v5.12 起動 ===');
+  const APP_VERSION = "2026.09.24.r5.12.2";
+  console.log('=== 在庫管理アプリ v5.12.2 起動 ===');
   console.log('Version:', APP_VERSION);
   
   const urlParams = new URLSearchParams(window.location.search);
@@ -287,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================
   // 【重要】最新のGAS Web App URL（/exec）に変更してください
   // =========================================================
-  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxJbo7uz-CJvcMOSk1mwrDDUM2KCJAJMq7o2x1qX8wVgTYLLzjp6bJhKr8VvXeByE30/exec";
+  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwgc7FiX1Rpx1000Ixg6Iib7s9Lq0iFS8kG-tLQ-pIbdOyDsek3pdaSuBbL2fbCtEVf/exec";
   
   const DEBUG = true;
   const CACHE_KEY_ITEMS = 'inventory_app_items_cache'; // ★キャッシュ用のキー名
@@ -422,7 +442,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const API_TIMEOUT_MS = 30000;
   const SAFE_RETRY_ACTIONS = new Set([
     "login","get_departments","get_supplier_emails","get_item_list",
-    "get_order_history","get_cart"
+    "get_order_history","get_cart","get_monthly_report"
   ]);
   const sleep = (ms)=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -485,8 +505,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if(result && result.status==="success"){
       state.user=result.data;
       dom.userName.textContent=state.user.name||"";
-      if (state.user.role === '管理者') { document.getElementById('cart-button').classList.remove('hidden'); } 
-      else { document.getElementById('cart-button').classList.add('hidden'); }
+      if (state.user.role === '管理者') {
+        document.getElementById('cart-button').classList.remove('hidden');
+        document.getElementById('report-button').classList.remove('hidden');
+      } else {
+        document.getElementById('cart-button').classList.add('hidden');
+        document.getElementById('report-button').classList.add('hidden');
+      }
       const home=(["管理者","使用者"].includes(state.user.role))?"view-home-user":"view-home-other-1";
       showView(home);
       if(home==="view-home-other-1") loadDepartments();
@@ -780,6 +805,69 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   };
+
+
+  // Monthly report
+  document.getElementById("report-button").addEventListener("click", () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    document.getElementById("report-month-input").value = `${yyyy}-${mm}`;
+    showView("view-report");
+  });
+
+  const csvEscape = (value) => {
+    const text = String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+
+  document.getElementById("download-report-button").addEventListener("click", async () => {
+    const month = document.getElementById("report-month-input").value;
+    if (!month) {
+      showAlert("対象月を選択してください。");
+      return;
+    }
+
+    toggleLoading(true);
+    const result = await callGasApi("get_monthly_report", { targetMonth: month });
+    toggleLoading(false);
+
+    if (!result || result.status !== "success") return;
+    if (!result.data || result.data.length === 0) {
+      showAlert("指定した月のデータはありません。");
+      return;
+    }
+
+    const headers = ["日時","物品ID","物品名","種別","数量","単価","合計金額","担当者","部署"];
+    const lines = [headers.map(csvEscape).join(",")];
+
+    result.data.forEach(r => {
+      lines.push([
+        r.date,
+        r.itemId,
+        r.itemName,
+        r.type,
+        r.quantity,
+        r.price,
+        r.totalAmount,
+        r.user,
+        r.department
+      ].map(csvEscape).join(","));
+    });
+
+    const csvContent = "\uFEFF" + lines.join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `在庫履歴レポート_${month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    showDoneAnd("出力完了", "CSVファイルのダウンロードを開始しました。", goHome);
+  });
 
   // Order history
   const handleGetOrderHistory=async()=>{
