@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v6.2</title>
+  <title>在庫管理アプリ v6.2.1</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
@@ -45,7 +45,7 @@
   <main id="main-root" class="p-4 md:p-6">
     <!-- Login -->
     <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.2</h2>
+      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.2.1</h2>
       <div class="space-y-6">
         <div class="p-4 border rounded-lg">
           <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
@@ -68,7 +68,7 @@
         <button id="order-history-button" class="col-span-2 bg-gray-500 hover:bg-gray-600 text-white p-6 rounded-lg text-lg font-bold">発注履歴</button>
         <button id="cart-button" class="col-span-2 bg-pink-500 hover:bg-pink-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">発注カートを開く</button>
         
-        <!-- ★ 新規追加: 月次レポートボタン -->
+        <!-- 月次レポートボタン -->
         <button id="report-button" class="col-span-2 bg-emerald-500 hover:bg-emerald-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">月次レポート(CSV)出力</button>
       </div>
     </div>
@@ -147,7 +147,7 @@
       </div>
     </div>
 
-    <!-- ★ 新規追加: レポート画面 -->
+    <!-- レポート画面 -->
     <div id="view-report" class="view">
       <h2 class="text-xl font-bold mb-4 text-center">月次レポート（CSV出力）</h2>
       <p class="text-sm text-gray-600 mb-6 text-center">指定した月の入出庫・発注履歴と金額を集計したCSVファイルをダウンロードします。</p>
@@ -242,8 +242,8 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const APP_VERSION = "2026.09.21.r6.2";
-  console.log('=== 在庫管理アプリ v6.2 起動 ===');
+  const APP_VERSION = "2026.09.21.r6.2.1";
+  console.log('=== 在庫管理アプリ v6.2.1 起動 ===');
   
   // =========================================================
   // 【重要】最新のGAS Web App URL（/exec）に変更してください
@@ -347,7 +347,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.user = res.data;
         dom.userName.textContent = state.user.name;
         document.getElementById("cart-button").classList.toggle("hidden", state.user.role !== '管理者');
-        document.getElementById("report-button").classList.toggle("hidden", state.user.role !== '管理者'); // ★レポートボタン制御
+        document.getElementById("report-button").classList.toggle("hidden", state.user.role !== '管理者'); 
         if(["管理者","使用者"].includes(state.user.role)) showView("view-home-user");
         else { showView("view-home-other-1"); loadDepartments(); }
       } else {
@@ -532,7 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("inventory-back-button").addEventListener("click", () => goHome());
 
-  // Cart
+  // ★ 修正箇所：カート内の区切り文字を安全なスラッシュ（/）に変更しました
   document.getElementById("cart-button").addEventListener("click", async () => {
     toggleLoading(true);
     const res = await callGasApi("get_cart");
@@ -553,7 +553,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="text-sm border-l-4 border-gray-300 pl-2">
                 <div class="font-semibold">${i.itemName}</div>
                 <div class="flex justify-between items-center mt-2">
-                  <div class="text-xs text-gray-600">在庫: <b>${i.stock}</b> \vert{} 未納: <b>${i.orderedQuantity}</b> | 点: <b class="text-red-500">${i.reorderPoint}</b></div>
+                  <div class="text-xs text-gray-600">在庫: <b>${i.stock}</b> / 未納: <b>${i.orderedQuantity}</b> / 点: <b class="text-red-500">${i.reorderPoint}</b></div>
                   <div class="flex items-center space-x-2 bg-pink-50 p-1 rounded">
                     <label class="text-xs font-bold text-pink-700">発注数:</label>
                     <input type="number" class="cart-qty-input border border-pink-300 rounded w-16 p-1 text-center font-bold text-lg" data-id="${i.itemId}" value="${i.suggestedQty}" min="0">
@@ -583,7 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ★ 新規追加: 月次レポート（CSV出力）
+  // 月次レポート（CSV出力）
   document.getElementById("report-button").addEventListener("click", () => {
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -604,10 +604,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if(res.data.length === 0) return showAlert("指定した月のデータはありません。");
       
       const headers = ["日時", "物品ID", "物品名", "種別", "数量", "単価", "合計金額", "担当者", "部署"];
-      let csvContent = "\uFEFF" + headers.join(",") + "\n"; // ★ Excelで文字化けしないBOM付きUTF-8
+      let csvContent = "\uFEFF" + headers.join(",") + "\n";
       
       res.data.forEach(r => {
-        // カンマ等の誤作動を防ぐため文字列はダブルクォーテーションで囲む
         const row = [ r.date, r.itemId, `"${r.itemName}"`, r.type, r.quantity, r.price, r.totalAmount, `"${r.user}"`, `"${r.department}"` ];
         csvContent += row.join(",") + "\n";
       });
