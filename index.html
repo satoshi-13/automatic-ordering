@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v6.3.0</title>
+  <title>在庫管理アプリ v6.4.0</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
@@ -28,7 +28,6 @@
 </head>
 <body class="bg-gray-100">
 <div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative">
-  <!-- 裏通信インジケーター（画面を止めずに右上へ小さく表示） -->
   <div id="bg-sync-badge" class="hidden fixed top-2 right-2 z-50 bg-blue-900 bg-opacity-80 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow">
     <span class="w-2 h-2 rounded-full bg-green-400 animate-ping"></span>同期中...
   </div>
@@ -39,7 +38,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
         <span class="text-lg font-bold">ホーム</span>
       </button>
-      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v6.3</span>
+      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v6.4</span>
     </div>
     <div class="text-right">
       <p id="user-name" class="text-sm"></p>
@@ -50,7 +49,7 @@
   <main id="main-root" class="p-4 md:p-6">
     <!-- Login -->
     <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.3.0</h2>
+      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.4.0</h2>
       <div class="space-y-6">
         <div class="p-4 border rounded-lg">
           <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
@@ -101,14 +100,15 @@
     <div id="view-quantity" class="view">
       <h2 id="quantity-title" class="text-xl font-bold text-center mb-4"></h2>
       <p id="final-code-display" class="text-center p-2 bg-gray-100 rounded-md mb-2 text-sm text-gray-600"></p>
-      <p id="item-name-display-quantity" class="text-center text-lg font-bold mb-4 text-gray-800 h-7"></p>
+      <p id="item-name-display-quantity" class="text-center text-lg font-bold mb-1 text-gray-800"></p>
+      <p id="item-unit-hint-quantity" class="text-center text-xs text-blue-600 font-semibold mb-4"></p>
       <label class="font-bold">数量を入力してください:</label>
       <input type="number" id="quantity-input" class="w-full p-4 border-2 rounded-lg text-3xl text-center mt-2" inputmode="numeric" />
       <button id="submit-stock-update" class="w-full bg-blue-500 text-white p-4 rounded-lg mt-4 text-lg font-bold hover:bg-blue-600">登録</button>
       <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
     </div>
 
-    <!-- New item -->
+    <!-- New item (スプレッドシートの新順序と完全一致) -->
     <div id="view-new-item" class="view">
       <h2 class="text-xl font-bold mb-4">新規物品登録</h2>
       <div class="mb-4">
@@ -119,15 +119,44 @@
         <button id="new-item-photo-button" class="w-full bg-purple-500 text-white p-2 rounded-md hover:bg-purple-600">写真を登録</button>
       </div>
       <div class="space-y-3">
-        <input type="text" id="new-item-name" placeholder="物品名 *" class="w-full p-3 border rounded-md" />
-        <input type="text" id="new-model" placeholder="型番/規格" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-stock" placeholder="初期在庫数 *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-reorder-point" placeholder="発注点 *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-price" placeholder="単価（円） *" class="w-full p-3 border rounded-md" />
-        <input type="email" id="new-supplier-email" list="supplier-email-list" placeholder="発注先メールアドレス *" class="w-full p-3 border rounded-md" />
-        <input type="number" id="new-par-level" placeholder="発注上限" class="w-full p-3 border rounded-md" />
-        <input type="text" id="new-use-for" placeholder="用途" class="w-full p-3 border rounded-md" />
-        <datalist id="supplier-email-list"></datalist>
+        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
+          <p class="text-xs font-bold text-gray-500">① 基本情報</p>
+          <input type="text" id="new-item-name" placeholder="物品名 *" class="w-full p-2.5 border rounded-md bg-white" />
+          <input type="text" id="new-model" placeholder="型番/規格" class="w-full p-2.5 border rounded-md bg-white" />
+          <input type="text" id="new-use-for" placeholder="用途（対応機種など）" class="w-full p-2.5 border rounded-md bg-white" />
+        </div>
+        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
+          <p class="text-xs font-bold text-gray-500">② 在庫管理（現場で数える単位で入力）</p>
+          <div class="grid grid-cols-3 gap-2">
+            <input type="number" id="new-stock" placeholder="初期在庫 *" class="w-full p-2.5 border rounded-md bg-white text-sm" />
+            <input type="number" id="new-reorder-point" placeholder="発注点 *" class="w-full p-2.5 border rounded-md bg-white text-sm" />
+            <input type="number" id="new-par-level" placeholder="発注上限" class="w-full p-2.5 border rounded-md bg-white text-sm" />
+          </div>
+        </div>
+        <div class="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2">
+          <p class="text-xs font-bold text-blue-800">③ 発注ルール（袋・箱換算設定 ※通常は1・1・空欄でOK）</p>
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="text-[11px] text-gray-600 block">1箱/袋の入数</label>
+              <input type="number" id="new-units-per-pkg" value="1" min="1" class="w-full p-2 border rounded-md bg-white text-center font-bold" />
+            </div>
+            <div>
+              <label class="text-[11px] text-gray-600 block">最小発注単位</label>
+              <input type="number" id="new-min-order-units" value="1" min="1" class="w-full p-2 border rounded-md bg-white text-center font-bold" />
+            </div>
+            <div>
+              <label class="text-[11px] text-gray-600 block">単位名(袋/箱)</label>
+              <input type="text" id="new-order-unit-name" placeholder="例: 袋, 箱" class="w-full p-2 border rounded-md bg-white text-center" />
+            </div>
+          </div>
+          <p class="text-[11px] text-blue-700">※例：1袋5個入・2袋単位で注文なら「入数: 5」「最小単位: 2」「単位名: 袋」</p>
+        </div>
+        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
+          <p class="text-xs font-bold text-gray-500">④ 価格・発注先</p>
+          <input type="number" id="new-price" placeholder="単価（円）※現場で数える1単位あたり *" class="w-full p-2.5 border rounded-md bg-white" />
+          <input type="email" id="new-supplier-email" list="supplier-email-list" placeholder="発注先メールアドレス *" class="w-full p-2.5 border rounded-md bg-white" />
+          <datalist id="supplier-email-list"></datalist>
+        </div>
       </div>
       <button id="submit-new-item" class="w-full bg-blue-500 text-white p-3 rounded-md mt-4 font-bold">登録する</button>
       <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
@@ -226,15 +255,27 @@
 
 <!-- Edit Item Modal -->
 <div id="edit-item-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md h-[80vh] overflow-y-auto">
+  <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md max-h-[85vh] overflow-y-auto">
     <h3 class="text-lg font-bold mb-4">物品情報の変更</h3>
     <div class="space-y-3">
-      <div><label class="text-sm font-semibold">物品名 *</label><input type="text" id="edit-item-name" class="w-full p-2 border rounded-md" /></div>
-      <div><label class="text-sm font-semibold">在庫数 *</label><input type="number" id="edit-stock" class="w-full p-2 border rounded-md" /></div>
-      <div><label class="text-sm font-semibold">発注点 *</label><input type="number" id="edit-reorder-point" class="w-full p-2 border rounded-md" /></div>
-      <div><label class="text-sm font-semibold">単価（円） *</label><input type="number" id="edit-price" class="w-full p-2 border rounded-md" /></div>
-      <div><label class="text-sm font-semibold">発注上限</label><input type="number" id="edit-par-level" class="w-full p-2 border rounded-md" /></div>
-      <div><label class="text-sm font-semibold">発注中数量</label><input type="number" id="edit-ordered-quantity" class="w-full p-2 border rounded-md" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">物品名 *</label><input type="text" id="edit-item-name" class="w-full p-2 border rounded-md" /></div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="text-xs font-semibold text-gray-600">在庫数 *</label><input type="number" id="edit-stock" class="w-full p-2 border rounded-md" /></div>
+        <div><label class="text-xs font-semibold text-gray-600">発注中数量(未納)</label><input type="number" id="edit-ordered-quantity" class="w-full p-2 border rounded-md" /></div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="text-xs font-semibold text-gray-600">発注点 *</label><input type="number" id="edit-reorder-point" class="w-full p-2 border rounded-md" /></div>
+        <div><label class="text-xs font-semibold text-gray-600">発注上限</label><input type="number" id="edit-par-level" class="w-full p-2 border rounded-md" /></div>
+      </div>
+      <div class="p-2.5 bg-blue-50 rounded border border-blue-200">
+        <p class="text-xs font-bold text-blue-800 mb-2">発注ルール（袋・箱換算）</p>
+        <div class="grid grid-cols-3 gap-2">
+          <div><label class="text-[11px] text-gray-600">入数</label><input type="number" id="edit-units-per-pkg" min="1" class="w-full p-1.5 border rounded bg-white text-center font-bold" /></div>
+          <div><label class="text-[11px] text-gray-600">最小発注単位</label><input type="number" id="edit-min-order-units" min="1" class="w-full p-1.5 border rounded bg-white text-center font-bold" /></div>
+          <div><label class="text-[11px] text-gray-600">単位名</label><input type="text" id="edit-order-unit-name" placeholder="袋/箱" class="w-full p-1.5 border rounded bg-white text-center" /></div>
+        </div>
+      </div>
+      <div><label class="text-xs font-semibold text-gray-600">単価（円 ※1管理単位あたり） *</label><input type="number" id="edit-price" class="w-full p-2 border rounded-md" /></div>
     </div>
     <div class="flex justify-end space-x-3 mt-6">
       <button id="edit-item-cancel" class="bg-gray-300 px-6 py-2 rounded-md">キャンセル</button>
@@ -245,11 +286,11 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const APP_VERSION = "2026.10.14.r6.3.0";
-  console.log('=== 在庫管理アプリ v6.3.0 (高速化版) 起動 ===');
+  const APP_VERSION = "2026.10.15.r6.4.0";
+  console.log('=== 在庫管理アプリ v6.4.0 起動 ===');
   
   const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec";
-  const CACHE_KEY_ITEMS = "inventory_app_items_cache_v63";
+  const CACHE_KEY_ITEMS = "inventory_app_items_cache_v64";
   
   const state = { user:null, currentView:null, historyStack:[], itemList:[], cartItems:[], stockUpdate:{}, otherUserInfo:{}, inventoryCount:{ items:[], currentIndex:0, currentItemId:null } };
   let currentEditItemId = null;
@@ -264,7 +305,6 @@ document.addEventListener("DOMContentLoaded", () => {
     modals:{ alert:document.getElementById("alert-modal"), confirm:document.getElementById("confirm-modal"), edit:document.getElementById("edit-item-modal") }
   };
 
-  // 起動時にローカルキャッシュがあれば即座にメモリへ展開
   try {
     const saved = localStorage.getItem(CACHE_KEY_ITEMS);
     if (saved) state.itemList = JSON.parse(saved);
@@ -312,7 +352,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const hideAllModals = ()=>{ dom.modals.alert.classList.add("hidden"); dom.modals.confirm.classList.add("hidden"); dom.modals.edit.classList.add("hidden"); };
   const showDoneAnd = (m,sub,next)=>{ document.getElementById("complete-message").innerHTML=String(m).replace(/\n/g, '<br>'); document.getElementById("complete-sub-message").innerHTML=String(sub||"").replace(/\n/g, '<br>'); showView("view-action-complete"); setTimeout(next,1200); };
 
-  // API通信
   const callGasApi = async (action, payload = {}, retryCount = 0, silent = false) => {
     const readActions = ['get_item_list', 'get_departments', 'get_supplier_emails', 'get_cart', 'get_order_history', 'get_inventory_progress', 'get_monthly_report'];
     const maxRetries = readActions.includes(action) ? 1 : 0;
@@ -343,7 +382,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // バックグラウンドで物品リストを最新化（プリフェッチ）
   const prefetchItems = () => {
     callGasApi("get_item_list", {}, 0, true).then(res => {
       if (res && res.data) {
@@ -353,7 +391,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  // Image helpers
   function extractDriveFileId(u){
     if(!u) return null; if(/^[A-Za-z0-9_-]{20,}$/.test(u)) return u;
     let m=String(u).match(/\/file\/d\/([A-Za-z0-9_-]+)\//); if(m) return m[1];
@@ -383,7 +420,6 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("report-button").classList.toggle("hidden", state.user.role !== '管理者'); 
         if(["管理者","使用者"].includes(state.user.role)) {
           showView("view-home-user");
-          // ログイン成功と同時に裏で物品リストを先読み開始！
           prefetchItems();
         } else {
           showView("view-home-other-1");
@@ -399,10 +435,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadDepartments=async()=>{ const res=await callGasApi("get_departments"); if(res) { const list=document.getElementById("department-list"); list.innerHTML=""; res.data.forEach(n=>{ const b=document.createElement("button"); b.textContent=n; b.className="bg-white border px-4 py-2 rounded-full hover:bg-gray-100"; b.onclick=()=>{ state.otherUserInfo.department=n; showView("view-home-other-2"); }; list.appendChild(b); }); }};
   const loadSupplierEmails=async()=>{ const res=await callGasApi("get_supplier_emails", {}, 0, true); if(res){ const dl=document.getElementById("supplier-email-list"); dl.innerHTML=""; res.data.forEach(e=>{ const o=document.createElement("option"); o.value=e; dl.appendChild(o); }); }};
 
-  // 物品一覧（キャッシュがあれば0.0秒で即時描画し、裏で最新化）
   const loadItems = async (force = false) => {
     showView("view-item-list");
-    
     if (state.itemList.length > 0 && !force) {
       renderItems();
       prefetchItems();
@@ -429,11 +463,23 @@ document.addEventListener("DOMContentLoaded", () => {
       return m;
     });
 
-    document.getElementById("item-list-container").innerHTML = items.length === 0 ? `<p class="text-center text-gray-500">該当する物品はありません。</p>` : items.map(item => `
+    document.getElementById("item-list-container").innerHTML = items.length === 0 ? `<p class="text-center text-gray-500">該当する物品はありません。</p>` : items.map(item => {
+      const pkg = Number(item.unitsPerPkg) || 1;
+      const minLot = Number(item.minOrderUnits) || 1;
+      const uName = item.orderUnitName || '';
+      const ruleBadge = (pkg > 1 || minLot > 1 || uName)
+        ? `<span class="inline-block bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-1.5 py-0.5 rounded mt-1">発注: ${pkg>1?`1${uName||'単位'}=${pkg}入 / `:''}${minLot}${uName||'単位'}ずつ</span>`
+        : '';
+
+      return `
       <div class="item-card p-3 border rounded-lg bg-white shadow-sm" data-id="${item.itemId}">
         <div class="flex items-start justify-between">
-          <div><h3 class="font-bold text-base">${item.itemName}</h3><p class="text-xs text-gray-500">ID: ${item.itemId}</p></div>
-          <div class="w-16 h-16 bg-gray-100 rounded overflow-hidden">
+          <div>
+            <h3 class="font-bold text-base">${item.itemName}</h3>
+            <p class="text-xs text-gray-500">ID: ${item.itemId} ${item.model ? `/ 型番: ${item.model}` : ''}</p>
+            ${ruleBadge}
+          </div>
+          <div class="w-16 h-16 bg-gray-100 rounded overflow-hidden shrink-0 ml-2">
             ${item.imageUrl ? `<img src="https://lh3.googleusercontent.com/d/${extractDriveFileId(item.imageUrl)}=s120-c" loading="lazy" class="w-full h-full object-cover">` : ''}
           </div>
         </div>
@@ -448,7 +494,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm btn-out">出庫</button>
         </div>
       </div>
-    `).join("");
+    `}).join("");
   };
 
   document.getElementById("item-list-container").addEventListener("click", e => {
@@ -457,9 +503,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if(e.target.classList.contains("btn-edit")){
       currentEditItemId = id;
-      document.getElementById("edit-item-name").value = item.itemName; document.getElementById("edit-stock").value = item.stock;
-      document.getElementById("edit-reorder-point").value = item.reorderPoint; document.getElementById("edit-price").value = item.price;
-      document.getElementById("edit-par-level").value = item.parLevel; document.getElementById("edit-ordered-quantity").value = item.orderedQuantity;
+      document.getElementById("edit-item-name").value = item.itemName;
+      document.getElementById("edit-stock").value = item.stock;
+      document.getElementById("edit-reorder-point").value = item.reorderPoint;
+      document.getElementById("edit-price").value = item.price;
+      document.getElementById("edit-par-level").value = item.parLevel;
+      document.getElementById("edit-ordered-quantity").value = item.orderedQuantity;
+      document.getElementById("edit-units-per-pkg").value = item.unitsPerPkg || 1;
+      document.getElementById("edit-min-order-units").value = item.minOrderUnits || 1;
+      document.getElementById("edit-order-unit-name").value = item.orderUnitName || '';
       dom.modals.edit.classList.remove("hidden");
     } else if(e.target.classList.contains("btn-in") || e.target.classList.contains("btn-out")){
       const action = e.target.classList.contains("btn-in") ? "入庫" : "出庫";
@@ -467,6 +519,12 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("quantity-title").textContent = action;
       document.getElementById("item-name-display-quantity").textContent = item.itemName;
       document.getElementById("final-code-display").textContent = `ID: ${id}`;
+      
+      // 入庫時に「1袋＝5個入」などのヒントを表示して入力ミスを防止
+      const pkg = Number(item.unitsPerPkg) || 1;
+      const uName = item.orderUnitName || '単位';
+      document.getElementById("item-unit-hint-quantity").textContent = pkg > 1 ? `※ 1${uName} ＝ ${pkg}個入りです（バラの個数で入力してください）` : '';
+
       document.getElementById("quantity-input").value = "";
       showView("view-quantity");
       setTimeout(() => document.getElementById("quantity-input").focus(), 50);
@@ -475,7 +533,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 入出庫の楽観的UI更新（ボタン押下0秒で画面反映＆裏で通信）
   document.getElementById("submit-stock-update").addEventListener("click", async () => {
     const qty = parseInt(document.getElementById("quantity-input").value, 10);
     if(!qty || qty<=0) return showAlert("正しい数量を入力してください");
@@ -486,7 +543,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return showAlert("在庫数がマイナスになります。");
     }
 
-    // 1. スマホ内のデータを即座に書き換え
     if (targetItem) {
       targetItem.stock += (isOut ? -qty : qty);
       if (!isOut) targetItem.orderedQuantity = Math.max(0, targetItem.orderedQuantity - qty);
@@ -496,11 +552,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const updatePayload = { itemId: state.stockUpdate.itemId, type: state.stockUpdate.action, quantity: qty, department: state.otherUserInfo.department, phs: state.otherUserInfo.phs };
     document.getElementById("quantity-input").value = "";
     
-    // 2. 通信完了を待たずに一覧画面へ即戻る
     showView("view-item-list", true);
     renderItems();
 
-    // 3. 裏側でGASへ送信
     const res = await callGasApi("stock_update", updatePayload, 0, true);
     if (res && res.message && res.message.includes('カート')) {
       showAlert(res.message);
@@ -511,14 +565,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("edit-item-save").addEventListener("click", async () => {
     const payload = {
-      itemId: currentEditItemId, itemName: document.getElementById("edit-item-name").value.trim(),
-      stock: Number(document.getElementById("edit-stock").value), reorderPoint: Number(document.getElementById("edit-reorder-point").value),
-      price: Number(document.getElementById("edit-price").value), parLevel: document.getElementById("edit-par-level").value.trim(),
-      orderedQuantity: Number(document.getElementById("edit-ordered-quantity").value)
+      itemId: currentEditItemId,
+      itemName: document.getElementById("edit-item-name").value.trim(),
+      stock: Number(document.getElementById("edit-stock").value),
+      reorderPoint: Number(document.getElementById("edit-reorder-point").value),
+      price: Number(document.getElementById("edit-price").value),
+      parLevel: document.getElementById("edit-par-level").value.trim(),
+      orderedQuantity: Number(document.getElementById("edit-ordered-quantity").value),
+      unitsPerPkg: Math.max(1, Number(document.getElementById("edit-units-per-pkg").value) || 1),
+      minOrderUnits: Math.max(1, Number(document.getElementById("edit-min-order-units").value) || 1),
+      orderUnitName: document.getElementById("edit-order-unit-name").value.trim()
     };
     if(!payload.itemName) return showAlert("物品名は必須です");
     
-    // ローカル即時反映
     const target = state.itemList.find(i => i.itemId === currentEditItemId);
     if (target) { Object.assign(target, payload); saveLocalCache(state.itemList); }
     dom.modals.edit.classList.add("hidden");
@@ -527,7 +586,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await callGasApi("update_item", payload, 0, true);
   });
 
-  // 棚卸し（キャッシュ活用＋次の画像を先読み）
+  // 棚卸し
   document.getElementById("inventory-count-button").addEventListener("click", async () => {
     toggleLoading(true);
     const itemsPromise = state.itemList.length > 0 ? Promise.resolve({ data: state.itemList }) : callGasApi("get_item_list");
@@ -555,7 +614,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("inventory-usefor").textContent = item.useFor || "—";
     setProgressiveImage(document.getElementById("inventory-image"), item.imageUrl);
     
-    // 次の物品の画像を裏で先読み（ページめくり時の画像表示を0秒にする）
     if (currentIndex + 1 < items.length) {
       const nextImgId = extractDriveFileId(items[currentIndex + 1].imageUrl);
       if (nextImgId) { const pre = new Image(); pre.src = `https://lh3.googleusercontent.com/d/${nextImgId}=s480-c`; }
@@ -566,7 +624,6 @@ document.addEventListener("DOMContentLoaded", () => {
     sizeInventoryView();
   };
 
-  // 棚卸し確定：ボタンを押した瞬間に0秒で次のアイテムへ進み、裏で1回の通信にまとめて保存
   document.getElementById("inventory-confirm-button").addEventListener("click", () => {
     const qty = parseInt(document.getElementById("inventory-actual-stock").value, 10);
     if(isNaN(qty) || qty < 0) return showAlert("有効な在庫数を入力してください");
@@ -574,19 +631,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentId = state.inventoryCount.currentItemId;
     const nextIndex = state.inventoryCount.currentIndex + 1;
 
-    // ローカル在庫を即時更新して0秒で次の画面へ
     const target = state.itemList.find(i => i.itemId === currentId);
     if (target) { target.stock = qty; saveLocalCache(state.itemList); }
     
     state.inventoryCount.currentIndex = nextIndex;
     displayCurrentInventoryItem();
 
-    // 裏側で在庫修正と進捗保存を1回のリクエストで同時実行
     callGasApi("stock_update", {
-      itemId: currentId,
-      type: "棚卸修正",
-      quantity: qty,
-      isCorrection: true,
+      itemId: currentId, type: "棚卸修正", quantity: qty, isCorrection: true,
       nextInventoryIndex: nextIndex >= state.inventoryCount.items.length ? 0 : nextIndex
     }, 0, true);
   });
@@ -604,7 +656,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("inventory-back-button").addEventListener("click", () => goHome());
 
-  // 発注カート（ローカルデータから即時計算も可能にしつつ最新確認）
+  // ★ 発注カート（袋・箱の自動換算表示＆ロット単位チェック付き）
+  const formatPkgLabel = (qty, item) => {
+    const pkg = Math.max(1, Number(item.unitsPerPkg) || 1);
+    const uName = item.orderUnitName || (pkg > 1 ? '単位' : '');
+    if (pkg === 1 && !uName) return '';
+    const pkgCount = qty / pkg;
+    return `＝ ${pkgCount}${uName}`;
+  };
+
   document.getElementById("cart-button").addEventListener("click", async () => {
     toggleLoading(true);
     const res = await callGasApi("get_cart");
@@ -621,32 +681,68 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="border rounded-lg p-3 bg-white shadow-sm border-blue-200">
           <h3 class="font-bold text-blue-800 border-b pb-2 mb-3 text-sm">宛先: ${sup}</h3>
           <div class="space-y-4">
-            ${grouped[sup].map(i => `
-              <div class="text-sm border-l-4 border-gray-300 pl-2">
-                <div class="font-semibold">${i.itemName}</div>
+            ${grouped[sup].map(i => {
+              const step = i.orderStep || 1;
+              const pkg = Number(i.unitsPerPkg) || 1;
+              const minLot = Number(i.minOrderUnits) || 1;
+              const uName = i.orderUnitName || '単位';
+              const ruleText = step > 1 ? `<div class="text-[11px] text-blue-700 font-semibold mt-0.5">※ ${step}個（${minLot}${uName}）単位で発注 [1${uName}=${pkg}入]</div>` : '';
+              const convLabel = formatPkgLabel(i.suggestedQty, i);
+
+              return `
+              <div class="text-sm border-l-4 border-pink-400 pl-2">
+                <div class="font-semibold">${i.itemName}</div>${ruleText}
                 <div class="flex justify-between items-center mt-2">
                   <div class="text-xs text-gray-600">在庫: <b>${i.stock}</b> / 未納: <b>${i.orderedQuantity}</b> / 点: <b class="text-red-500">${i.reorderPoint}</b></div>
-                  <div class="flex items-center space-x-2 bg-pink-50 p-1 rounded">
-                    <label class="text-xs font-bold text-pink-700">発注数:</label>
-                    <input type="number" class="cart-qty-input border border-pink-300 rounded w-16 p-1 text-center font-bold text-lg" data-id="${i.itemId}" value="${i.suggestedQty}" min="0">
+                  <div class="flex flex-col items-end">
+                    <div class="flex items-center space-x-1.5 bg-pink-50 p-1 rounded">
+                      <label class="text-xs font-bold text-pink-700">発注数:</label>
+                      <input type="number" class="cart-qty-input border border-pink-300 rounded w-16 p-1 text-center font-bold text-lg" data-id="${i.itemId}" step="${step}" min="0" value="${i.suggestedQty}">
+                    </div>
+                    <span class="cart-conv-label text-xs font-bold text-pink-700 mt-0.5" data-id="${i.itemId}">${convLabel}</span>
                   </div>
                 </div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         </div>
       `).join('');
+
+      // 数量変更時に「＝ 〇袋」の表示をリアルタイム更新
+      c.querySelectorAll('.cart-qty-input').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const item = state.cartItems.find(x => x.itemId === e.target.dataset.id);
+          const lbl = c.querySelector(`.cart-conv-label[data-id="${e.target.dataset.id}"]`);
+          if (item && lbl) lbl.textContent = formatPkgLabel(Number(e.target.value) || 0, item);
+        });
+      });
+
       showView("view-cart");
     }
   });
 
   document.getElementById("submit-cart-button").addEventListener("click", () => {
     const orders = [];
+    let invalidMsg = null;
+
     document.querySelectorAll('.cart-qty-input').forEach(inp => {
       const q = parseInt(inp.value, 10);
-      if(q > 0) { const i = state.cartItems.find(x => x.itemId === inp.dataset.id); if(i) orders.push({...i, quantity: q}); }
+      if(q > 0) {
+        const i = state.cartItems.find(x => x.itemId === inp.dataset.id);
+        if(i) {
+          const step = i.orderStep || 1;
+          if (q % step !== 0) {
+            const uName = i.orderUnitName || '単位';
+            invalidMsg = `「${i.itemName}」は ${step}個（${i.minOrderUnits}${uName}）の倍数で入力してください。`;
+          }
+          orders.push({...i, quantity: q});
+        }
+      }
     });
+
+    if (invalidMsg) return showAlert(invalidMsg);
     if(!orders.length) return showAlert('発注する物品がありません。');
+
     showConfirm(`${orders.length}件の物品を一括発注します。よろしいですか？`, async () => {
       hideAllModals(); toggleLoading(true);
       const res = await callGasApi("submit_batch_orders", { orders });
@@ -767,20 +863,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("submit-new-item").addEventListener("click", async () => {
     const payload = {
-      itemName: document.getElementById("new-item-name").value.trim(), model: document.getElementById("new-model").value.trim(),
-      stock: Number(document.getElementById("new-stock").value), reorderPoint: Number(document.getElementById("new-reorder-point").value),
-      price: Number(document.getElementById("new-price").value), supplierEmail: document.getElementById("new-supplier-email").value.trim(),
-      parLevel: document.getElementById("new-par-level").value.trim(), useFor: document.getElementById("new-use-for").value.trim(),
+      itemName: document.getElementById("new-item-name").value.trim(),
+      model: document.getElementById("new-model").value.trim(),
+      useFor: document.getElementById("new-use-for").value.trim(),
+      stock: Number(document.getElementById("new-stock").value),
+      reorderPoint: Number(document.getElementById("new-reorder-point").value),
+      parLevel: document.getElementById("new-par-level").value.trim(),
+      unitsPerPkg: Math.max(1, Number(document.getElementById("new-units-per-pkg").value) || 1),
+      minOrderUnits: Math.max(1, Number(document.getElementById("new-min-order-units").value) || 1),
+      orderUnitName: document.getElementById("new-order-unit-name").value.trim(),
+      price: Number(document.getElementById("new-price").value),
+      supplierEmail: document.getElementById("new-supplier-email").value.trim(),
       imageUrl: newItemPhotoUrl
     };
-    if(!payload.itemName || !payload.stock || !payload.reorderPoint || !payload.price || !payload.supplierEmail) return showAlert("必須項目を入力してください");
+    if(!payload.itemName || isNaN(payload.stock) || !payload.reorderPoint || !payload.price || !payload.supplierEmail) return showAlert("必須項目を入力してください");
     toggleLoading(true);
     const res = await callGasApi("item_register", payload);
     toggleLoading(false);
     if(res) {
       clearCache();
       prefetchItems();
-      showAlert("登録しました。"); document.querySelectorAll("#view-new-item input").forEach(i=>i.value="");
+      showAlert("登録しました。");
+      document.querySelectorAll("#view-new-item input").forEach(i=>i.value="");
+      document.getElementById("new-units-per-pkg").value = "1";
+      document.getElementById("new-min-order-units").value = "1";
       newItemPhotoUrl=''; document.getElementById("new-item-photo-preview").innerHTML='<span class="text-gray-400 text-sm">写真未登録</span>';
     }
   });
