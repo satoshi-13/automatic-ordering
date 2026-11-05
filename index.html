@@ -1,995 +1,1044 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>在庫管理アプリ v6.4.1</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
-  <style>
-    body { font-family: "Inter","Noto Sans JP",sans-serif; }
-    .view { display:none; animation: fadeIn .18s ease-out; }
-    @keyframes fadeIn { from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)} }
-    @keyframes shake{ 10%,90%{transform:translate3d(-1px,0,0)} 20%,80%{transform:translate3d(2px,0,0)} 30%,50%,70%{transform:translate3d(-4px,0,0)} 40%,60%{transform:translate3d(4px,0,0)} }
-    .shake-error{animation:shake .82s cubic-bezier(.36,.07,.19,.97) both}
-    input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0 }
-    input[type="number"]{ -moz-appearance:textfield }
-    .square-img{ width:100%; max-width:480px; aspect-ratio:1/1; overflow:hidden; border-radius:.75rem; background:#f3f4f6; margin:0 auto }
-    .square-img>img{ width:100%; height:100%; object-fit:cover; display:block }
-    .blur-up{ filter:blur(12px); transition:filter .2s ease }
-    .blur-up.loaded{ filter:blur(0) }
-    #loading-overlay{z-index:70}
-    #alert-modal,#confirm-modal,#edit-item-modal{z-index:80}
-    .inventory-fit{ display:flex; flex-direction:column; gap:.5rem }
-    .inventory-grid{ display:grid; grid-template-columns:1fr auto; gap:.5rem; align-items:start }
-    .square-btn{ width:2.5rem; height:2.5rem }
-    .roller-input{ font-size:2rem; line-height:1; padding:.5rem .75rem }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="在庫管理">
+<meta name="theme-color" content="#0e5c66">
+<title>在庫管理</title>
+<script>try{var t=JSON.parse(localStorage.getItem('inv7_theme')||'"auto"');if(t!=='auto')document.documentElement.dataset.theme=t;}catch(e){}</script>
+<style>
+:root{
+  --bg:#eef2f5; --surface:#ffffff; --ink:#13212e; --muted:#5d6b78; --faint:#a9b5bf; --line:#d6dee5;
+  --accent:#0e5c66; --on-accent:#ffffff; --accent-soft:#dcefF1;
+  --ok:#2e7d4f; --ok-bg:#e1f3e8; --warn:#7a5000; --warn-bg:#fff1b8; --warn-line:#e0b400;
+  --alert:#c0303a; --alert-bg:#fbe3e4; --key:#e3e9ee; --empty:#eef1f4; --head:#0e5c66; --on-head:#ffffff;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+  --bg:#0f1820; --surface:#18242f; --ink:#e6edf2; --muted:#93a3b1; --faint:#56687a; --line:#2a3a48;
+  --accent:#4cc3cf; --on-accent:#06252a; --accent-soft:#163a40;
+  --ok:#6fd69a; --ok-bg:#163223; --warn:#ffd45c; --warn-bg:#3a3110; --warn-line:#c9a200;
+  --alert:#ff7b84; --alert-bg:#3d1a1d; --key:#223241; --empty:#141f29; --head:#123540; --on-head:#e6f6f8;
+  color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1820; --surface:#18242f; --ink:#e6edf2; --muted:#93a3b1; --faint:#56687a; --line:#2a3a48;
+  --accent:#4cc3cf; --on-accent:#06252a; --accent-soft:#163a40;
+  --ok:#6fd69a; --ok-bg:#163223; --warn:#ffd45c; --warn-bg:#3a3110; --warn-line:#c9a200;
+  --alert:#ff7b84; --alert-bg:#3d1a1d; --key:#223241; --empty:#141f29; --head:#123540; --on-head:#e6f6f8;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;
+  -webkit-tap-highlight-color:transparent;font-size:16px;line-height:1.45}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.4;cursor:default}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+[hidden]{display:none!important}
+
+/* ヘッダー */
+.top{position:sticky;top:0;z-index:5;background:var(--head);color:var(--on-head);
+  padding:calc(env(safe-area-inset-top,0px) + 9px) 14px 9px;display:flex;align-items:center;gap:10px}
+.top h1{font-size:17px;margin:0;font-weight:700;flex:1}
+#sync{font-size:12px;opacity:.9}
+.top .icon{color:var(--on-head);width:36px;height:36px;border-radius:50%;font-size:18px;display:grid;place-items:center}
+.top .icon:active{background:rgba(255,255,255,.18)}
+.top .who{color:var(--on-head);font-size:14px;font-weight:700;padding:5px 12px;border-radius:99px;border:1.5px solid currentColor}
+main{max-width:560px;margin:0 auto;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 40px)}
+main.with-bar{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
+main.with-sheet{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 380px)}
+h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
+.banner{padding:9px 12px;border-radius:10px;margin-bottom:10px;font-size:14px;display:flex;gap:10px;align-items:center}
+.banner.warn{background:var(--warn-bg);color:var(--warn)}
+.banner.err{background:var(--alert-bg);color:var(--alert)}
+.chip{font-size:12px;padding:1px 9px;border-radius:99px;background:var(--line);color:var(--muted);white-space:nowrap;font-weight:600}
+.chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.alert{background:var(--alert-bg);color:var(--alert)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.adm{background:var(--accent-soft);color:var(--accent)}
+
+/* 見出し（戻る＋タイトル） */
+.entry-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.back{font-size:15px;color:var(--accent);font-weight:600;padding:8px 0;white-space:nowrap}
+.entry-head h2{margin:0;flex:1;text-align:right;color:var(--ink);font-size:20px;line-height:1.25}
+.entry-head h2 small{display:block;font-size:12px;color:var(--muted);font-weight:400}
+
+/* ログイン */
+.who-title{font-size:22px;font-weight:700;margin:18px 0 2px}
+.boxes{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:22px 0 8px}
+.box{height:68px;border-radius:14px;background:var(--surface);border:2px solid var(--line);display:grid;place-items:center;font-size:32px;font-weight:700}
+.box.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+/* ホーム */
+.alertbar{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;background:var(--alert-bg);color:var(--alert);border:2px solid var(--alert);margin-bottom:4px}
+.alertbar b{font-size:16px;white-space:nowrap}
+.alertbar span{font-size:13px;flex:1}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:8px 12px;text-align:left}
+.stat .lab{font-size:13px;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:center}
+.stat .v{font-size:26px;font-weight:700;line-height:1.2}
+.stat .v small{font-size:14px;font-weight:500;margin-left:3px}
+.stat.warn{background:var(--warn-bg);border-color:var(--warn-line)} .stat.warn .lab{color:var(--warn)}
+.progress{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:4px}
+.progress i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.menu{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mtile{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:10px 12px;min-height:88px;text-align:left;
+  display:flex;flex-direction:column;justify-content:space-between}
+.mtile .lab{font-size:12px;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:center}
+.mtile .t{font-size:18px;font-weight:700;line-height:1.25}
+.mtile:active,.stat:active{transform:scale(.98)}
+
+/* 一覧 */
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:0 12px;height:46px;color:var(--muted)}
+.search input{border:0;outline:0;flex:1;background:none;min-width:0}
+.search svg{width:18px;height:18px;flex:none}
+.filters{display:flex;gap:6px;overflow-x:auto;padding:8px 0 4px;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.filters button{flex:none;padding:6px 13px;border-radius:99px;border:1.5px solid var(--line);background:var(--surface);font-size:14px;font-weight:600}
+.filters button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.seg2{display:grid;grid-template-columns:1fr 1fr;background:var(--key);border-radius:12px;padding:3px;gap:3px;margin-top:8px}
+.seg2 button{height:38px;border-radius:9px;font-size:15px;font-weight:700;color:var(--muted)}
+.seg2 button.on{background:var(--surface);color:var(--accent);box-shadow:0 1px 3px rgba(10,30,40,.15)}
+.cnt{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;margin:4px 2px 6px}
+.cnt b{color:var(--ink)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.irow{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);border-left:6px solid transparent}
+.irow:last-child{border-bottom:0}
+.irow.warn{border-left-color:var(--warn-line)} .irow.alert{border-left-color:var(--alert)}
+.irow .info{flex:1;min-width:0;text-align:left;padding:2px 0}
+.irow .nm{font-weight:700;font-size:15px;line-height:1.3}
+.irow .md{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.irow .stock{text-align:right;min-width:50px}
+.irow .stock b{display:block;font-size:24px;line-height:1.1}
+.irow .stock span{font-size:11px;color:var(--muted);white-space:nowrap}
+.irow .acts{display:flex;flex-direction:column;gap:4px}
+.ab{width:56px;height:36px;border-radius:9px;border:2px solid var(--line);background:var(--bg);font-size:14px;font-weight:700}
+.ab.in{border-color:var(--accent);color:var(--accent);background:var(--surface)}
+.empty-msg{padding:24px 12px;text-align:center;color:var(--muted);font-size:14px}
+
+/* 入力画面のタイル */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:10px 12px;text-align:left;min-height:88px;
+  display:flex;flex-direction:column;justify-content:space-between}
+.tile .lab{font-size:13px;color:var(--muted);font-weight:600}
+.tile .tv{font-size:30px;font-weight:700;line-height:1.1}
+.tile .tv small{font-size:14px;font-weight:500;margin-left:3px}
+.tile .tsub{font-size:12px;min-height:16px;color:var(--muted)}
+.tile.act{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tile.warn{background:var(--warn-bg);border-color:var(--warn-line)} .tile.warn .tsub,.tile.warn .lab{color:var(--warn)}
+.tile.alert{background:var(--alert-bg);border-color:var(--alert)} .tile.alert .tsub,.tile.alert .lab{color:var(--alert)}
+.tile.warn.act,.tile.alert.act{box-shadow:0 0 0 3px var(--accent)}
+.kind{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.kind button{height:64px;border-radius:14px;border:2px solid var(--line);background:var(--surface);font-size:17px;font-weight:700;line-height:1.2}
+.kind button small{display:block;font-size:12px;font-weight:500;opacity:.85}
+.kind button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.kind button.on.w{background:var(--ok);border-color:var(--ok);color:var(--on-accent)}
+.infoline{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:14px;display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}
+.infoline span{color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;gap:12px;align-items:center;margin-bottom:8px}
+.ph{width:96px;height:96px;border-radius:10px;background:var(--empty);color:var(--muted);font-size:12px;display:grid;place-items:center;flex:none;overflow:hidden;padding:0}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.card .nm{font-size:18px;font-weight:700;line-height:1.3}
+.card .md{font-size:13px;color:var(--muted)}
+.nav{display:flex;align-items:center;gap:8px}
+.nav .sp{flex:1;text-align:center;font-weight:700}
+
+/* テンキー（下から出る） */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:7;background:var(--surface);border-top:1px solid var(--line);
+  box-shadow:0 -8px 24px rgba(10,30,40,.12);padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px)}
+.sheet-in{max-width:536px;margin:0 auto}
+.sheet-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sheet-head b{flex:1;font-size:16px}
+.sheet-head button{height:44px;padding:0 14px;border-radius:10px;font-weight:700;font-size:15px;background:var(--key)}
+.sheet-head .go{background:var(--accent);color:var(--on-accent)}
+.hint{font-size:13px;min-height:38px;margin:0 2px 6px;color:var(--muted)}
+.hint.warn{color:var(--warn);font-weight:700} .hint.alert{color:var(--alert);font-weight:700} .hint.ok{color:var(--ok);font-weight:600}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.keypad button{background:var(--key);height:56px;border-radius:12px;font-size:25px;font-weight:600;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:transform .06s,background .06s}
+.keypad button:active,.keypad button.down{background:var(--line);transform:scale(.95)}
+
+/* 保存バー */
+.savebar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
+  padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px)}
+.savebar button{display:block;width:100%;max-width:536px;margin:0 auto;height:56px;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:17px;font-weight:700;line-height:1.2}
+.savebar button small{display:block;font-size:12px;font-weight:500;opacity:.85}
+
+/* 発注カート・履歴 */
+.gh{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:700;margin:12px 2px 6px}
+.gh span{font-size:13px;color:var(--muted);font-weight:600}
+.crow{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.crow:last-child{border-bottom:0}
+.crow .nm{font-weight:700;font-size:15px;line-height:1.3}
+.crow .md{font-size:12px;color:var(--muted)}
+.line{display:flex;align-items:center;gap:8px}
+.step{display:flex;align-items:center;background:var(--bg);border-radius:12px}
+.step button{width:46px;height:46px;font-size:22px;font-weight:700;color:var(--accent)}
+.step b{min-width:52px;text-align:center;font-size:20px}
+.step b small{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+.price{flex:1;text-align:right;font-size:12px;color:var(--muted)}
+.price b{display:block;font-size:16px;color:var(--ink)}
+.hrow{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);width:100%;text-align:left}
+.hrow:last-child{border-bottom:0}
+.hrow:active{background:var(--bg)}
+.hrow .info{flex:1;min-width:0}
+.hrow .nm{font-weight:700;font-size:14px;line-height:1.3}
+.hrow .md{font-size:12px;color:var(--muted)}
+.hrow .rt{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.hrow .qty{font-weight:700}
+.hrow .amt{font-size:12px;color:var(--muted)}
+.range{display:flex;gap:6px;align-items:center;margin-top:4px}
+.range input{flex:1;min-width:0;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+
+/* 要確認 */
+.acard{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.acard.alert{border-color:var(--alert)} .acard.warn{border-color:var(--warn-line)}
+.acard .nm{font-size:17px;font-weight:700;line-height:1.3}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.fact{background:var(--bg);border-radius:10px;padding:5px 10px}
+.fact span{display:block;font-size:12px;color:var(--muted)}
+.fact b{font-size:18px}
+.acard .note{font-size:13px;color:var(--muted)}
+.acts2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn{min-height:46px;border-radius:12px;border:2px solid var(--line);background:var(--surface);font-size:15px;font-weight:700;padding:4px 8px}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.danger{color:var(--alert);border-color:var(--alert)}
+
+/* フォーム */
+.form{display:flex;flex-direction:column;gap:10px}
+.fgrp{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.fgrp h3{margin:0;font-size:14px;color:var(--muted);font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:13px;font-weight:600;color:var(--muted)}
+.field label em{font-style:normal;color:var(--alert);margin-left:4px;font-size:11px}
+.field input,.field select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fnote{font-size:12px;color:var(--muted)}
+.photo-row{display:flex;gap:12px;align-items:center}
+.linkbtn{color:var(--accent);font-weight:600;font-size:14px;padding:10px 2px}
+
+/* 詳細シート（発注履歴） */
+.dsheet{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surface);border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  box-shadow:0 -8px 24px rgba(10,30,40,.18);padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px)}
+.dsheet .in{max-width:536px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.dsheet h3{margin:0;font-size:18px}
+.dsheet dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:14px}
+.dsheet dt{color:var(--muted)} .dsheet dd{margin:0}
+.scrim{position:fixed;inset:0;z-index:7;background:rgba(5,15,20,.35)}
+
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 62px);transform:translateX(-50%) translateY(-12px);opacity:0;visibility:hidden;
+  background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:12px;font-size:15px;width:max-content;max-width:92vw;
+  display:flex;gap:16px;align-items:center;transition:transform .18s,opacity .18s,visibility .18s;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible}
+#busy{position:fixed;inset:0;z-index:30;background:rgba(5,15,20,.25);display:grid;place-items:center}
+#busy div{background:var(--surface);color:var(--ink);padding:14px 20px;border-radius:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
 </head>
-<body class="bg-gray-100">
-<div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-lg relative">
-  <div id="bg-sync-badge" class="hidden fixed top-2 right-2 z-50 bg-blue-900 bg-opacity-80 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow">
-    <span class="w-2 h-2 rounded-full bg-green-400 animate-ping"></span>同期中...
-  </div>
-
-  <header id="app-header" class="bg-blue-600 text-white p-4 flex justify-between items-center hidden">
-    <div class="flex items-center space-x-3">
-      <button id="main-menu-button" class="hidden flex items-center space-x-2 p-2 -ml-2 rounded-md hover:bg-blue-700 transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
-        <span class="text-lg font-bold">ホーム</span>
-      </button>
-      <span id="header-app-title" class="hidden text-lg font-bold">物品管理 v6.4.1</span>
-    </div>
-    <div class="text-right">
-      <p id="user-name" class="text-sm"></p>
-      <button id="logout-button" class="text-xs text-blue-200 hover:underline">ログアウト</button>
-    </div>
-  </header>
-
-  <main id="main-root" class="p-4 md:p-6">
-    <!-- Login -->
-    <div id="view-login" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-700">在庫管理 v6.4.1</h2>
-      <div class="space-y-6">
-        <div class="p-4 border rounded-lg">
-          <h3 class="font-bold mb-2">管理者 / 使用者の方</h3>
-          <p class="text-sm text-gray-600 mb-4">5桁のユーザー番号を入力してください</p>
-          <input type="number" id="login-id-input" inputmode="numeric" pattern="[0-9]*" class="w-full p-4 border-2 border-gray-300 rounded-lg text-center text-4xl tracking-[.5em] focus:border-blue-500 focus:ring-blue-500" maxlength="5" />
-        </div>
-        <div class="p-4 border rounded-lg">
-          <button id="other-staff-login-button" class="w-full bg-gray-500 text-white p-3 rounded-md hover:bg-gray-600 transition-colors">その他の方はこちら</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Home -->
-    <div id="view-home-user" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">メインメニュー</h2>
-      <div class="grid grid-cols-2 gap-4">
-        <button id="item-list-button" class="col-span-2 bg-indigo-500 hover:bg-indigo-600 text-white p-6 rounded-lg text-lg font-bold">物品一覧</button>
-        <button id="inventory-count-button" class="col-span-2 bg-cyan-500 hover:bg-cyan-600 text-white p-6 rounded-lg text-lg font-bold">棚卸し作業</button>
-        <button id="new-item-button" class="col-span-2 bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-lg text-lg font-bold">新規物品登録</button>
-        <button id="order-history-button" class="col-span-2 bg-gray-500 hover:bg-gray-600 text-white p-6 rounded-lg text-lg font-bold">発注履歴</button>
-        <button id="cart-button" class="col-span-2 bg-pink-500 hover:bg-pink-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">発注カートを開く</button>
-        <button id="report-button" class="col-span-2 bg-emerald-500 hover:bg-emerald-600 text-white p-6 rounded-lg text-lg font-bold hidden relative">月次レポート(CSV)出力</button>
-      </div>
-    </div>
-
-    <!-- others login -->
-    <div id="view-home-other-1" class="view">
-      <h3 class="font-bold text-lg mb-4">部署/職種を選択してください</h3>
-      <div id="department-list" class="flex flex-wrap gap-3 justify-center"><p class="text-gray-500">部署を読み込み中...</p></div>
-      <button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">戻る</button>
-    </div>
-
-    <div id="view-home-other-2" class="view">
-      <h3 class="font-bold text-lg mb-4">お名前とPHS番号を入力してください</h3>
-      <input type="text" id="other-name-input" placeholder="お名前 *" class="w-full p-3 border rounded-md mb-3 focus:ring-2 focus:ring-blue-500" />
-      <input type="number" id="phs-input" placeholder="PHS番号" class="w-full p-3 border rounded-md mb-4 focus:ring-2 focus:ring-blue-500" />
-      <button id="phs-submit-button" class="w-full bg-blue-500 text-white p-3 rounded-md hover:bg-blue-600">次へ</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600" data-target="view-home-other-1">戻る</button>
-    </div>
-
-    <div id="view-home-other-menu" class="view">
-      <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">メインメニュー</h2>
-      <div class="p-4 border rounded-lg bg-yellow-50 text-yellow-900">このアカウントでの操作は制限されています。</div>
-      <button class="back-button mt-6 w-full text-center text-gray-600" data-target="view-login">ログイン画面に戻る</button>
-    </div>
-
-    <!-- Quantity (In/Out) -->
-    <div id="view-quantity" class="view">
-      <h2 id="quantity-title" class="text-xl font-bold text-center mb-4"></h2>
-      <p id="final-code-display" class="text-center p-2 bg-gray-100 rounded-md mb-2 text-sm text-gray-600"></p>
-      <p id="item-name-display-quantity" class="text-center text-lg font-bold mb-1 text-gray-800"></p>
-      <p id="item-unit-hint-quantity" class="text-center text-xs text-blue-600 font-semibold mb-4"></p>
-      <label class="font-bold">数量を入力してください:</label>
-      <input type="number" id="quantity-input" class="w-full p-4 border-2 rounded-lg text-3xl text-center mt-2" inputmode="numeric" />
-      <button id="submit-stock-update" class="w-full bg-blue-500 text-white p-4 rounded-lg mt-4 text-lg font-bold hover:bg-blue-600">登録</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- New item (穴埋め文章UI ＋ リアルタイム翻訳プレビュー付き) -->
-    <div id="view-new-item" class="view">
-      <h2 class="text-xl font-bold mb-4">新規物品登録</h2>
-      <div class="mb-4">
-        <label class="text-sm font-semibold mb-2 block">物品写真（任意）</label>
-        <div id="new-item-photo-preview" class="square-img mb-2 bg-gray-100 flex items-center justify-center">
-          <span class="text-gray-400 text-sm">写真未登録</span>
-        </div>
-        <button id="new-item-photo-button" class="w-full bg-purple-500 text-white p-2 rounded-md hover:bg-purple-600">写真を登録</button>
-      </div>
-      <div class="space-y-3">
-        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
-          <p class="text-xs font-bold text-gray-500">① 基本情報</p>
-          <input type="text" id="new-item-name" placeholder="物品名 *" class="w-full p-2.5 border rounded-md bg-white" />
-          <input type="text" id="new-model" placeholder="型番/規格" class="w-full p-2.5 border rounded-md bg-white" />
-          <input type="text" id="new-use-for" placeholder="用途（対応機種など）" class="w-full p-2.5 border rounded-md bg-white" />
-        </div>
-        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
-          <p class="text-xs font-bold text-gray-500">② 在庫管理（普段スタッフが数えるバラ単位で入力）</p>
-          <div class="grid grid-cols-3 gap-2">
-            <div><label class="text-[11px] text-gray-500">初期在庫 *</label><input type="number" id="new-stock" placeholder="例: 10" class="w-full p-2 border rounded-md bg-white text-center font-bold" /></div>
-            <div><label class="text-[11px] text-gray-500">発注点 *</label><input type="number" id="new-reorder-point" placeholder="例: 5" class="w-full p-2 border rounded-md bg-white text-center font-bold" /></div>
-            <div><label class="text-[11px] text-gray-500">発注上限</label><input type="number" id="new-par-level" placeholder="例: 20" class="w-full p-2 border rounded-md bg-white text-center font-bold" /></div>
-          </div>
-        </div>
-
-        <!-- ★改善：迷わない「穴埋め文章式」の発注ルール設定 -->
-        <div class="p-3.5 bg-blue-50 rounded-lg border border-blue-200 space-y-2.5">
-          <p class="text-xs font-bold text-blue-900">③ 業者への発注ルール（袋・箱などの換算）</p>
-          
-          <div class="flex items-center justify-between bg-white px-3 py-2 rounded border">
-            <span class="text-xs font-semibold text-gray-700">Step1. 発注時の単位名は？</span>
-            <input type="text" id="new-order-unit-name" placeholder="例: 袋, 箱 (空欄可)" class="w-28 p-1.5 border rounded bg-gray-50 text-center text-sm font-bold focus:bg-white" />
-          </div>
-
-          <div class="flex items-center justify-between bg-white px-3 py-2 rounded border">
-            <span class="text-xs font-semibold text-gray-700">Step2. <b class="new-unit-label text-blue-700">1袋/箱</b> に何個入り？</span>
-            <div class="flex items-center gap-1.5">
-              <input type="number" id="new-units-per-pkg" value="1" min="1" class="w-16 p-1.5 border rounded bg-gray-50 text-center text-base font-bold focus:bg-white" />
-              <span class="text-xs font-bold text-gray-600">個入り</span>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between bg-white px-3 py-2 rounded border">
-            <span class="text-xs font-semibold text-gray-700">Step3. 注文は最低いくつずつ？</span>
-            <div class="flex items-center gap-1.5">
-              <input type="number" id="new-min-order-units" value="1" min="1" class="w-16 p-1.5 border rounded bg-gray-50 text-center text-base font-bold focus:bg-white" />
-              <span class="new-unit-label-suffix text-xs font-bold text-blue-700">袋/箱ずつ</span>
-            </div>
-          </div>
-
-          <!-- リアルタイム日本語翻訳プレビュー -->
-          <div id="new-rule-preview" class="p-2.5 bg-blue-600 text-white rounded-md text-xs leading-relaxed shadow-sm"></div>
-        </div>
-
-        <div class="p-3 bg-gray-50 rounded-lg border space-y-2">
-          <p class="text-xs font-bold text-gray-500">④ 価格・発注先</p>
-          <div>
-            <label id="new-price-hint" class="text-[11px] text-blue-700 font-semibold block mb-1">※普段数える「1個」あたりの単価を入力してください</label>
-            <input type="number" id="new-price" placeholder="単価（円） *" class="w-full p-2.5 border rounded-md bg-white" />
-          </div>
-          <input type="email" id="new-supplier-email" list="supplier-email-list" placeholder="発注先メールアドレス *" class="w-full p-2.5 border rounded-md bg-white" />
-          <datalist id="supplier-email-list"></datalist>
-        </div>
-      </div>
-      <button id="submit-new-item" class="w-full bg-blue-500 text-white p-3 rounded-md mt-4 font-bold">登録する</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- Order history -->
-    <div id="view-order-history" class="view">
-      <h2 class="text-xl font-bold mb-4">発注履歴</h2>
-      <div id="order-history-list" class="space-y-3"></div>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- Cart -->
-    <div id="view-cart" class="view">
-      <h2 class="text-xl font-bold mb-4 text-center">発注カート（取りまとめ）</h2>
-      <div id="cart-container" class="space-y-6"></div>
-      <div class="mt-6">
-        <button id="submit-cart-button" class="w-full bg-red-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-red-600">一括発注する</button>
-        <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-      </div>
-    </div>
-
-    <!-- レポート画面 -->
-    <div id="view-report" class="view">
-      <h2 class="text-xl font-bold mb-4 text-center">月次レポート（CSV出力）</h2>
-      <p class="text-sm text-gray-600 mb-6 text-center">指定した月の入出庫・発注履歴と金額を集計したCSVファイルをダウンロードします。</p>
-      <div class="mb-6 p-4 border rounded-lg bg-gray-50">
-        <label class="block text-sm font-bold text-gray-700 mb-2">対象月を選択</label>
-        <input type="month" id="report-month-input" class="w-full p-4 border-2 rounded-lg text-xl text-center focus:ring-emerald-500 focus:border-emerald-500" />
-      </div>
-      <button id="download-report-button" class="w-full bg-emerald-500 text-white p-4 rounded-lg text-lg font-bold hover:bg-emerald-600">CSVダウンロード</button>
-      <button class="back-button mt-4 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- Done -->
-    <div id="view-action-complete" class="view text-center py-12">
-      <svg class="mx-auto h-16 w-16 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      <h2 id="complete-message" class="mt-4 text-2xl font-bold text-gray-800"></h2>
-      <p id="complete-sub-message" class="text-gray-600 mt-2 leading-relaxed text-sm"></p>
-    </div>
-
-    <!-- Item list -->
-    <div id="view-item-list" class="view">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold">物品一覧</h2>
-        <button id="refresh-item-list" class="text-sm bg-blue-100 text-blue-700 font-semibold px-3 py-1 rounded-md flex items-center gap-1">最新に更新</button>
-      </div>
-      <div class="mb-4 space-y-2">
-        <input type="text" id="item-search-input" class="w-full p-2 border rounded-md" placeholder="物品名で検索..." />
-        <div class="flex items-center space-x-4 text-sm">
-          <label class="flex items-center"><input type="checkbox" id="filter-reorder-needed" class="mr-2" />要発注</label>
-          <label class="flex items-center"><input type="checkbox" id="filter-on-order" class="mr-2" />発注中</label>
-        </div>
-      </div>
-      <div id="item-list-container" class="space-y-3"></div>
-      <button class="back-button mt-6 w-full text-center text-gray-600">戻る</button>
-    </div>
-
-    <!-- Inventory count -->
-    <div id="view-inventory-count" class="view">
-      <h2 class="text-xl font-bold text-center mb-2">棚卸し作業</h2>
-      <p id="inventory-count-progress" class="text-center text-sm text-gray-500 mb-2"></p>
-      <div id="inventory-fit-root" class="inventory-fit p-3 border rounded-lg bg-gray-50">
-        <div class="square-img"><img id="inventory-image" alt="物品画像" class="blur-up" loading="lazy" /></div>
-        <div class="inventory-grid">
-          <div class="flex flex-col justify-between">
-            <div>
-              <h3 id="inventory-item-name" class="text-base font-bold text-gray-800 leading-tight"></h3>
-              <p class="text-xs text-gray-600 mt-1 mb-2">用途: <span id="inventory-usefor" class="font-medium text-gray-700"></span></p>
-            </div>
-            <div class="flex flex-col space-y-2">
-              <button id="inventory-prev-button" class="px-3 py-2 rounded-md border border-gray-300 text-gray-700 bg-white shadow-sm text-sm font-semibold flex items-center justify-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg> 1つ前に戻る
-              </button>
-              <button id="inventory-back-button" class="px-3 py-2 rounded-md border border-gray-300 text-gray-500 bg-gray-100 text-sm flex items-center justify-center">中断してホームへ</button>
-            </div>
-          </div>
-          <div class="justify-self-end flex flex-col justify-between h-full">
-            <div class="flex items-center space-x-2">
-              <button id="roll-dec" class="square-btn rounded bg-gray-200 flex items-center justify-center font-bold">−</button>
-              <input type="number" id="inventory-actual-stock" class="roller-input w-20 border-2 rounded-lg text-center" inputmode="numeric" />
-              <button id="roll-inc" class="square-btn rounded bg-gray-200 flex items-center justify-center font-bold">＋</button>
-            </div>
-            <button id="inventory-confirm-button" class="mt-auto w-full bg-green-600 text-white rounded-md font-bold flex items-center justify-center py-3 active:scale-95 transition-transform">確定して次へ</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
-</div>
-
-<!-- Overlays & Modals -->
-<div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div></div>
-<div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg w-11/12 max-w-sm text-center"><p id="alert-message" class="mb-4 text-gray-700 leading-relaxed"></p><button id="alert-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md">OK</button></div></div>
-<div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden"><div class="bg-white p-6 rounded-lg w-11/12 max-w-sm text-center"><p id="confirm-message" class="mb-6 text-gray-700"></p><div class="flex justify-center space-x-4"><button id="confirm-cancel-button" class="bg-gray-300 text-gray-800 px-8 py-2 rounded-md">いいえ</button><button id="confirm-ok-button" class="bg-blue-500 text-white px-8 py-2 rounded-md">はい</button></div></div></div>
-
-<!-- Edit Item Modal (穴埋め文章UI ＋ リアルタイム翻訳プレビュー付き) -->
-<div id="edit-item-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden">
-  <div class="bg-white p-5 rounded-lg shadow-xl w-11/12 max-w-md max-h-[88vh] overflow-y-auto">
-    <h3 class="text-lg font-bold mb-3">物品情報の変更</h3>
-    <div class="space-y-3">
-      <div><label class="text-xs font-semibold text-gray-600">物品名 *</label><input type="text" id="edit-item-name" class="w-full p-2 border rounded-md" /></div>
-      <div class="grid grid-cols-2 gap-2">
-        <div><label class="text-xs font-semibold text-gray-600">在庫数(バラ) *</label><input type="number" id="edit-stock" class="w-full p-2 border rounded-md" /></div>
-        <div><label class="text-xs font-semibold text-gray-600">発注中数量(未納)</label><input type="number" id="edit-ordered-quantity" class="w-full p-2 border rounded-md" /></div>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div><label class="text-xs font-semibold text-gray-600">発注点 *</label><input type="number" id="edit-reorder-point" class="w-full p-2 border rounded-md" /></div>
-        <div><label class="text-xs font-semibold text-gray-600">発注上限</label><input type="number" id="edit-par-level" class="w-full p-2 border rounded-md" /></div>
-      </div>
-
-      <!-- ★改善：変更モーダル側も穴埋め文章式＆リアルタイムプレビュー -->
-      <div class="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2">
-        <p class="text-xs font-bold text-blue-900">発注ルール（袋・箱などの換算）</p>
-        <div class="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border">
-          <span class="text-xs font-semibold text-gray-700">1. 発注時の単位名</span>
-          <input type="text" id="edit-order-unit-name" placeholder="例: 袋, 箱" class="w-24 p-1 border rounded bg-gray-50 text-center text-sm font-bold" />
-        </div>
-        <div class="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border">
-          <span class="text-xs font-semibold text-gray-700">2. <b class="edit-unit-label text-blue-700">1袋/箱</b> の入数</span>
-          <div class="flex items-center gap-1">
-            <input type="number" id="edit-units-per-pkg" min="1" class="w-16 p-1 border rounded bg-gray-50 text-center font-bold" />
-            <span class="text-xs font-bold text-gray-600">個入</span>
-          </div>
-        </div>
-        <div class="flex items-center justify-between bg-white px-2.5 py-1.5 rounded border">
-          <span class="text-xs font-semibold text-gray-700">3. 最低いくつずつ注文？</span>
-          <div class="flex items-center gap-1">
-            <input type="number" id="edit-min-order-units" min="1" class="w-16 p-1 border rounded bg-gray-50 text-center font-bold" />
-            <span class="edit-unit-label-suffix text-xs font-bold text-blue-700">袋/箱ずつ</span>
-          </div>
-        </div>
-        <div id="edit-rule-preview" class="p-2 bg-blue-600 text-white rounded text-xs leading-relaxed"></div>
-      </div>
-
-      <div>
-        <label class="text-xs font-semibold text-gray-600">単価（円） *</label>
-        <span id="edit-price-hint" class="text-[10px] text-blue-700 block mb-1"></span>
-        <input type="number" id="edit-price" class="w-full p-2 border rounded-md" />
-      </div>
-    </div>
-    <div class="flex justify-end space-x-3 mt-5">
-      <button id="edit-item-cancel" class="bg-gray-300 px-5 py-2 rounded-md text-sm font-semibold">キャンセル</button>
-      <button id="edit-item-save" class="bg-blue-500 text-white px-6 py-2 rounded-md text-sm font-bold">保存</button>
-    </div>
-  </div>
-</div>
+<body>
+<header class="top">
+  <h1>在庫管理</h1>
+  <span id="sync"></span>
+  <button class="icon" id="theme" data-act="theme"></button>
+  <button class="who" id="who" data-act="logout" hidden></button>
+</header>
+<main id="app"></main>
+<div id="toast" role="status"></div>
+<div id="busy" hidden><div id="busy-msg">処理中…</div></div>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const APP_VERSION = "2026.10.15.r6.4.1";
-  console.log('=== 在庫管理アプリ v6.4.1 起動 ===');
-  
-  const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec";
-  const CACHE_KEY_ITEMS = "inventory_app_items_cache_v64";
-  
-  const state = { user:null, currentView:null, historyStack:[], itemList:[], cartItems:[], stockUpdate:{}, otherUserInfo:{}, inventoryCount:{ items:[], currentIndex:0, currentItemId:null } };
-  let currentEditItemId = null;
-  let bgSyncCount = 0;
+/* ===== 設定 ===== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
+const VERSION = 'v7.0';
 
-  const dom = {
-    views:document.querySelectorAll(".view"), loading:document.getElementById("loading-overlay"),
-    bgBadge:document.getElementById("bg-sync-badge"),
-    header:document.getElementById("app-header"), headerTitle:document.getElementById("header-app-title"),
-    mainMenuBtn:document.getElementById("main-menu-button"), mainRoot:document.getElementById("main-root"),
-    userName:document.getElementById("user-name"), loginId:document.getElementById("login-id-input"),
-    modals:{ alert:document.getElementById("alert-modal"), confirm:document.getElementById("confirm-modal"), edit:document.getElementById("edit-item-modal") }
-  };
+const app = document.getElementById('app');
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('inv7_' + k); return v ? JSON.parse(v) : d; } catch (_) { return d; } },
+  set(k, v) { try { localStorage.setItem('inv7_' + k, JSON.stringify(v)); } catch (_) {} },
+  del(k) { try { localStorage.removeItem('inv7_' + k); } catch (_) {} }
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const yen = n => '¥' + Math.round(Number(n) || 0).toLocaleString('ja-JP');
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayStr = () => ymd(new Date());
+function fmtDay(s) { const [y, m, d] = s.split('-').map(Number); return `${m}/${d}(${'日月火水木金土'[new Date(y, m - 1, d).getDay()]})`; }
 
+/* ===== 状態 ===== */
+const S = {
+  user: null, view: 'login', items: [], itemsLoaded: false, error: '',
+  alerts: null, orders: null, cart: null, suppliers: [],
+  itemsFilter: 'all', q: '',
+  hist: { mode: 'day', period: 'month', st: 'all', q: '', from: '', to: '', detail: null },
+  stock: null, count: null, form: null, login: ''
+};
+const isAdmin = () => !!S.user && S.user.role === '管理者';
+const itemById = id => S.items.find(i => i.itemId === String(id));
+
+/* ===== 表示テーマ（自動 → 明るい → 暗い） ===== */
+const THEMES = { auto: ['◐', '自動（端末の設定に合わせる）'], light: ['☀', '明るい表示'], dark: ['☾', '暗い表示'] };
+let theme = store.get('theme', 'auto');
+function applyTheme() {
+  if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+  const b = document.getElementById('theme');
+  b.textContent = THEMES[theme][0];
+  b.setAttribute('aria-label', '表示の切り替え：' + THEMES[theme][1]);
+  const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#123540' : '#0e5c66';
+}
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+/* ===== 通信 ===== */
+async function call(action, payload = {}) {
+  const body = { action, payload: Object.assign({}, payload) };
+  if (S.user && action !== 'login') body.payload.auth = { loginId: S.user.loginId };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
   try {
-    const saved = localStorage.getItem(CACHE_KEY_ITEMS);
-    if (saved) state.itemList = JSON.parse(saved);
-  } catch (e) {}
-
-  const saveLocalCache = (items) => {
-    state.itemList = items;
-    try { localStorage.setItem(CACHE_KEY_ITEMS, JSON.stringify(items)); } catch (e) {}
-  };
-  const clearCache = () => {
-    try { localStorage.removeItem(CACHE_KEY_ITEMS); } catch (e) {}
-  };
-
-  const toggleBgSync = (delta) => {
-    bgSyncCount = Math.max(0, bgSyncCount + delta);
-    dom.bgBadge.classList.toggle("hidden", bgSyncCount === 0);
-  };
-
-  // ★追加：発注ルールのリアルタイム日本語翻訳プレビュー機能
-  const updateRulePreview = (prefix) => {
-    const uNameRaw = document.getElementById(`${prefix}-order-unit-name`).value.trim();
-    const pkg = Math.max(1, parseInt(document.getElementById(`${prefix}-units-per-pkg`).value, 10) || 1);
-    const minLot = Math.max(1, parseInt(document.getElementById(`${prefix}-min-order-units`).value, 10) || 1);
-    const price = parseInt(document.getElementById(`${prefix}-price`).value, 10) || 0;
-
-    const uName = uNameRaw || (pkg > 1 ? '箱/袋' : '個');
-    const totalStep = pkg * minLot;
-
-    // 入力欄の横のラベルを単位名に連動させる
-    document.querySelectorAll(`.${prefix}-unit-label`).forEach(el => el.textContent = `1${uNameRaw || '袋/箱'}`);
-    document.querySelectorAll(`.${prefix}-unit-label-suffix`).forEach(el => el.textContent = `${uNameRaw || '袋/箱'}ずつ`);
-
-    const previewEl = document.getElementById(`${prefix}-rule-preview`);
-    const priceHintEl = document.getElementById(`${prefix}-price-hint`);
-
-    if (pkg === 1 && minLot === 1 && !uNameRaw) {
-      previewEl.innerHTML = `💡 <b>現在の設定：</b> 通常のバラ発注（<b>1個単位</b>でそのまま発注します）`;
-      if (priceHintEl) priceHintEl.textContent = `※1個あたりの単価を入力してください`;
-    } else if (pkg === 1) {
-      previewEl.innerHTML = `💡 <b>現在の設定：</b> <b>1${uName}</b>ずつ数え、最低 <b>${minLot}${uName}単位</b> で発注します`;
-      if (priceHintEl) priceHintEl.textContent = `※1${uName}あたりの単価を入力してください`;
-    } else {
-      const pkgPriceStr = price > 0 ? `（メール上の単価表記: 1${uName}＝<b>${(price * pkg).toLocaleString()}円</b>）` : '';
-      previewEl.innerHTML = `💡 <b>現在の設定：</b> <b>1${uName} ＝ ${pkg}個入り</b> の商品を、最低 <b>${minLot}${uName}（＝バラ計${totalStep}個）ずつ</b> 発注します ${pkgPriceStr}`;
-      if (priceHintEl) priceHintEl.textContent = `※バラ1個あたりの単価を入力（メール送信時は1${uName}=${pkg}個分の単価に自動換算されます）`;
+    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ctrl.signal });
+    const j = await r.json();
+    if (j.status === 'error') { const e = new Error(j.message || 'エラーが起きました'); e.server = true; throw e; }
+    return j;
+  } catch (e) {
+    if (e.server) {
+      if (/認証/.test(e.message)) setTimeout(() => logout(true), 50);
+      throw e;
     }
-  };
+    const n = new Error('通信できません。電波の良い場所でもう一度お試しください');
+    n.net = true; throw n;
+  } finally { clearTimeout(timer); }
+}
+async function blocking(msg, fn) {
+  document.getElementById('busy-msg').textContent = msg;
+  document.getElementById('busy').hidden = false;
+  try { return await fn(); }
+  catch (e) { toast(e.message); return null; }
+  finally { document.getElementById('busy').hidden = true; }
+}
 
-  ['new', 'edit'].forEach(prefix => {
-    ['order-unit-name', 'units-per-pkg', 'min-order-units', 'price'].forEach(field => {
-      const el = document.getElementById(`${prefix}-${field}`);
-      if (el) el.addEventListener('input', () => updateRulePreview(prefix));
-    });
-  });
-
-  const freezeBody = (on)=>document.body.classList.toggle("overflow-hidden", on);
-  const sizeInventoryView = ()=>{
-    const view = document.getElementById("inventory-fit-root");
-    if(!view) return;
-    const headerH = dom.header.classList.contains("hidden") ? 0 : dom.header.offsetHeight;
-    const pad = parseFloat(getComputedStyle(dom.mainRoot).paddingTop) + parseFloat(getComputedStyle(dom.mainRoot).paddingBottom);
-    view.style.minHeight = `calc(100vh - ${headerH + pad}px)`;
-  };
-
-  const showView = (id, isBack=false)=>{
-    dom.views.forEach(v=>v.style.display="none");
-    const el = document.getElementById(id);
-    if(el){ el.style.display="block"; if(!isBack && state.currentView) state.historyStack.push(state.currentView); state.currentView = id; }
-    dom.header.classList.toggle("hidden", id==="view-login" || id==="view-home-other-1");
-    dom.headerTitle.classList.toggle("hidden", id!=="view-home-user");
-    dom.mainMenuBtn.classList.toggle("hidden", id==="view-home-user");
-    if(id==="view-inventory-count"){ freezeBody(true); sizeInventoryView(); } else { freezeBody(false); }
-  };
-
-  const goBack = ()=>{ const p = state.historyStack.pop(); if(p) showView(p,true); };
-  const goHome = ()=>{ state.historyStack=[]; showView("view-home-user"); };
-  const toggleLoading = on => dom.loading.classList.toggle("hidden", !on);
-  
-  let alertCb=null, confirmCb=null;
-  const showAlert = (m, cb=null)=>{ document.getElementById("alert-message").innerHTML=String(m).replace(/\n/g, '<br>'); dom.modals.alert.classList.remove("hidden"); alertCb = cb; };
-  const showConfirm = (m,onOk)=>{ document.getElementById("confirm-message").textContent=m; dom.modals.confirm.classList.remove("hidden"); confirmCb=onOk; };
-  const hideAllModals = ()=>{ dom.modals.alert.classList.add("hidden"); dom.modals.confirm.classList.add("hidden"); dom.modals.edit.classList.add("hidden"); };
-  const showDoneAnd = (m,sub,next)=>{ document.getElementById("complete-message").innerHTML=String(m).replace(/\n/g, '<br>'); document.getElementById("complete-sub-message").innerHTML=String(sub||"").replace(/\n/g, '<br>'); showView("view-action-complete"); setTimeout(next,1200); };
-
-  const callGasApi = async (action, payload = {}, retryCount = 0, silent = false) => {
-    const readActions = ['get_item_list', 'get_departments', 'get_supplier_emails', 'get_cart', 'get_order_history', 'get_inventory_progress', 'get_monthly_report'];
-    const maxRetries = readActions.includes(action) ? 1 : 0;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    if (silent) toggleBgSync(1);
-    try {
-      const req = { action, payload };
-      if (state.user && !['login','get_departments','get_supplier_emails'].includes(action)) req.payload.auth = state.user;
-      const res = await fetch(GAS_WEB_APP_URL, {
-        method: "POST", mode: "cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(req), signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      const json = await res.json();
-      if(json.status==="error") throw new Error(json.message);
-      return json;
-    } catch (e) {
-      clearTimeout(timeoutId);
-      if (e.name === 'AbortError' || e.message === 'Failed to fetch') {
-        if (retryCount < maxRetries) { return callGasApi(action, payload, retryCount + 1, silent); }
-      }
-      if (!silent) showAlert(`通信エラー: ${e.name === 'AbortError' ? 'タイムアウトしました' : e.message}`);
-      return null;
-    } finally {
-      if (silent) toggleBgSync(-1);
-    }
-  };
-
-  const prefetchItems = () => {
-    callGasApi("get_item_list", {}, 0, true).then(res => {
-      if (res && res.data) {
-        saveLocalCache(res.data);
-        if (state.currentView === "view-item-list") renderItems();
-      }
-    });
-  };
-
-  function extractDriveFileId(u){
-    if(!u) return null; if(/^[A-Za-z0-9_-]{20,}$/.test(u)) return u;
-    let m=String(u).match(/\/file\/d\/([A-Za-z0-9_-]+)\//); if(m) return m[1];
-    m=String(u).match(/[?&]id=([A-Za-z0-9_-]+)/); if(m) return m[1];
-    m=String(u).match(/\/d\/([A-Za-z0-9_-]+)/); if(m) return m[1];
-    return null;
+/* =========================================================
+ * 送信箱（入庫・出庫・棚卸しは押した瞬間に画面へ反映し、裏で順番に送る）
+ * ======================================================= */
+const OB = { ops: store.get('outbox', []), busy: false, timer: null };
+const saveOutbox = () => store.set('outbox', OB.ops);
+function enqueue(action, payload, local) {
+  const op = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), action, payload, local: local || null, user: S.user && S.user.loginId };
+  OB.ops.push(op); saveOutbox();
+  if (op.local) applyLocal(op.local);
+  kick(200);
+}
+function applyLocal(l) {
+  const it = itemById(l.itemId); if (!it) return;
+  const q = Number(l.quantity);
+  if (l.type === '入庫') { it.orderedQuantity = Math.max(0, it.orderedQuantity - q); it.stock += q; }
+  else if (l.type === '保証品入庫') it.stock += q;
+  else if (l.type === '出庫') it.stock = Math.max(0, it.stock - q);
+  else if (l.type === '棚卸修正') it.stock = q;
+}
+function kick(delay) { clearTimeout(OB.timer); OB.timer = setTimeout(drain, delay); updateSync(); }
+async function drain() {
+  if (OB.busy || !OB.ops.length || !S.user) return;
+  OB.busy = true; updateSync();
+  const op = OB.ops[0];
+  try {
+    const res = await call(op.action, op.payload);
+    OB.ops.shift(); saveOutbox();
+    if (res && res.needsCheck) { toast(res.message); S.alerts = null; }
+  } catch (e) {
+    if (e.net) { OB.busy = false; updateSync(); kick(8000); return; }   // 電波が戻るまで端末に残す
+    OB.ops.shift(); saveOutbox();                                       // サーバーが断った操作は捨てて最新を取り直す
+    toast('記録できませんでした：' + e.message);
+    S.itemsLoaded = false;
   }
-  function setProgressiveImage(img,url){
-    const id = extractDriveFileId(url);
-    if(!id){ img.removeAttribute("src"); img.classList.remove("loaded"); return; }
-    img.classList.remove("loaded");
-    img.onerror = ()=>{ requestAnimationFrame(()=>img.classList.add("loaded")); };
-    img.onload = ()=>{ requestAnimationFrame(()=>img.classList.add("loaded")); };
-    img.src = `https://lh3.googleusercontent.com/d/${id}=s480-c`;
-  }
+  OB.busy = false;
+  if (OB.ops.length) kick(0);
+  else { updateSync(); refreshQuiet(); }
+}
+function updateSync() {
+  const n = OB.ops.length;
+  document.getElementById('sync').textContent = !n ? '' : (navigator.onLine === false ? `未送信 ${n}件` : '送信中…');
+}
 
-  // Auth
-  document.getElementById("login-id-input").addEventListener("input", async (e) => {
-    if(e.target.value.length === 5) {
-      toggleLoading(true);
-      const res = await callGasApi("login", {loginId: e.target.value});
-      toggleLoading(false);
-      if(res && res.status === "success") {
-        state.user = res.data;
-        dom.userName.textContent = state.user.name;
-        document.getElementById("cart-button").classList.toggle("hidden", state.user.role !== '管理者');
-        document.getElementById("report-button").classList.toggle("hidden", state.user.role !== '管理者'); 
-        if(["管理者","使用者"].includes(state.user.role)) {
-          showView("view-home-user");
-          prefetchItems();
-        } else {
-          showView("view-home-other-1");
-          loadDepartments();
-        }
-      } else {
-        dom.loginId.classList.add("shake-error"); setTimeout(()=>dom.loginId.classList.remove("shake-error"), 820);
-        e.target.value = "";
-      }
-    }
-  });
+/* ===== 読み込み ===== */
+let refreshTimer;
+function refreshQuiet() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(async () => {
+    if (OB.ops.length || !S.user) return;
+    await loadItems(true);
+    if (isAdmin() || S.view === 'alerts') loadAlerts(true);
+  }, 1200);
+}
+async function loadItems(quiet) {
+  try {
+    const r = await call('get_item_list', { forceRefresh: !quiet });
+    S.items = r.data || []; S.itemsLoaded = true; S.error = '';
+    store.set('items_' + S.user.role, S.items);
+    OB.ops.forEach(o => o.local && applyLocal(o.local));
+  } catch (e) { S.error = e.message; }
+  if (['home', 'items'].includes(S.view)) render();
+}
+const loading = {};
+async function loadAlerts(quiet) {
+  if (loading.alerts) return; loading.alerts = true;
+  try { const r = await call('get_alerts'); S.alerts = r.data || []; S.lateDays = r.lateDays; }
+  catch (e) { if (!quiet) toast(e.message); if (!S.alerts && !quiet) S.alerts = []; }
+  loading.alerts = false;
+  if (['home', 'alerts'].includes(S.view)) render();
+}
+async function loadOrders() {
+  if (loading.orders) return; loading.orders = true;
+  try { const r = await call('get_order_history'); S.orders = r.data || []; }
+  catch (e) { toast(e.message); if (!S.orders) S.orders = []; }
+  loading.orders = false;
+  if (['home', 'history'].includes(S.view)) render();
+}
 
-  const loadDepartments=async()=>{ const res=await callGasApi("get_departments"); if(res) { const list=document.getElementById("department-list"); list.innerHTML=""; res.data.forEach(n=>{ const b=document.createElement("button"); b.textContent=n; b.className="bg-white border px-4 py-2 rounded-full hover:bg-gray-100"; b.onclick=()=>{ state.otherUserInfo.department=n; showView("view-home-other-2"); }; list.appendChild(b); }); }};
-  const loadSupplierEmails=async()=>{ const res=await callGasApi("get_supplier_emails", {}, 0, true); if(res){ const dl=document.getElementById("supplier-email-list"); dl.innerHTML=""; res.data.forEach(e=>{ const o=document.createElement("option"); o.value=e; dl.appendChild(o); }); }};
+/* ===== トースト ===== */
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<span>${esc(msg)}</span>`;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
 
-  const loadItems = async (force = false) => {
-    showView("view-item-list");
-    if (state.itemList.length > 0 && !force) {
-      renderItems();
-      prefetchItems();
-    } else {
-      toggleLoading(true);
-      const res = await callGasApi("get_item_list", { forceRefresh: force });
-      toggleLoading(false);
-      if(res && res.data) {
-        saveLocalCache(res.data);
-        renderItems();
-      }
-    }
-  };
-
-  const renderItems = () => {
-    const q = document.getElementById("item-search-input").value.toLowerCase();
-    const onlyRe = document.getElementById("filter-reorder-needed").checked;
-    const onlyOn = document.getElementById("filter-on-order").checked;
-    
-    let items = state.itemList.filter(i => {
-      let m = (i.itemName || "").toLowerCase().includes(q);
-      if(onlyRe && i.stock >= i.reorderPoint) m = false;
-      if(onlyOn && i.orderedQuantity <= 0) m = false;
-      return m;
-    });
-
-    document.getElementById("item-list-container").innerHTML = items.length === 0 ? `<p class="text-center text-gray-500">該当する物品はありません。</p>` : items.map(item => {
-      const pkg = Number(item.unitsPerPkg) || 1;
-      const minLot = Number(item.minOrderUnits) || 1;
-      const uName = item.orderUnitName || (pkg > 1 ? '単位' : '個');
-      const ruleBadge = (pkg > 1 || minLot > 1 || item.orderUnitName)
-        ? `<span class="inline-block bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold px-2 py-0.5 rounded mt-1">📦 ${pkg>1?`1${uName}＝${pkg}個入 ／ `:''}最低${minLot}${uName}${pkg>1?`(計${pkg*minLot}個)`:''}ずつ発注</span>`
-        : '';
-
-      return `
-      <div class="item-card p-3 border rounded-lg bg-white shadow-sm" data-id="${item.itemId}">
-        <div class="flex items-start justify-between">
-          <div>
-            <h3 class="font-bold text-base">${item.itemName}</h3>
-            <p class="text-xs text-gray-500">ID: ${item.itemId} ${item.model ? `/ 型番: ${item.model}` : ''}</p>
-            ${ruleBadge}
-          </div>
-          <div class="w-16 h-16 bg-gray-100 rounded overflow-hidden shrink-0 ml-2">
-            ${item.imageUrl ? `<img src="https://lh3.googleusercontent.com/d/${extractDriveFileId(item.imageUrl)}=s120-c" loading="lazy" class="w-full h-full object-cover">` : ''}
-          </div>
-        </div>
-        <div class="mt-2 text-sm flex justify-between">
-          <div>在庫: <span class="font-bold text-lg">${item.stock}</span> <span class="text-red-500 text-xs">(発注点: ${item.reorderPoint})</span></div>
-          <div class="text-gray-500 text-xs">未納: ${item.orderedQuantity}</div>
-        </div>
-        <div class="mt-3 flex justify-end space-x-2">
-          <button class="bg-purple-500 text-white px-3 py-1 rounded text-sm btn-photo">写真</button>
-          <button class="bg-gray-500 text-white px-3 py-1 rounded text-sm btn-edit">変更</button>
-          <button class="bg-green-500 text-white px-3 py-1 rounded text-sm btn-in">入庫</button>
-          <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm btn-out">出庫</button>
-        </div>
-      </div>
-    `}).join("");
-  };
-
-  document.getElementById("item-list-container").addEventListener("click", e => {
-    const card = e.target.closest(".item-card"); if(!card) return;
-    const id = card.dataset.id; const item = state.itemList.find(i=>i.itemId===id); if(!item) return;
-
-    if(e.target.classList.contains("btn-edit")){
-      currentEditItemId = id;
-      document.getElementById("edit-item-name").value = item.itemName;
-      document.getElementById("edit-stock").value = item.stock;
-      document.getElementById("edit-reorder-point").value = item.reorderPoint;
-      document.getElementById("edit-price").value = item.price;
-      document.getElementById("edit-par-level").value = item.parLevel;
-      document.getElementById("edit-ordered-quantity").value = item.orderedQuantity;
-      document.getElementById("edit-units-per-pkg").value = item.unitsPerPkg || 1;
-      document.getElementById("edit-min-order-units").value = item.minOrderUnits || 1;
-      document.getElementById("edit-order-unit-name").value = item.orderUnitName || '';
-      updateRulePreview('edit');
-      dom.modals.edit.classList.remove("hidden");
-    } else if(e.target.classList.contains("btn-in") || e.target.classList.contains("btn-out")){
-      const action = e.target.classList.contains("btn-in") ? "入庫" : "出庫";
-      state.stockUpdate = { itemId: id, action };
-      document.getElementById("quantity-title").textContent = action;
-      document.getElementById("item-name-display-quantity").textContent = item.itemName;
-      document.getElementById("final-code-display").textContent = `ID: ${id}`;
-      
-      const pkg = Number(item.unitsPerPkg) || 1;
-      const uName = item.orderUnitName || '単位';
-      document.getElementById("item-unit-hint-quantity").textContent = pkg > 1 ? `💡 1${uName} ＝ ${pkg}個入りです（バラの個数で入力してください）` : '';
-
-      document.getElementById("quantity-input").value = "";
-      showView("view-quantity");
-      setTimeout(() => document.getElementById("quantity-input").focus(), 50);
-    } else if(e.target.classList.contains("btn-photo")){
-      pickAndUploadPhoto(id);
-    }
-  });
-
-  document.getElementById("submit-stock-update").addEventListener("click", async () => {
-    const qty = parseInt(document.getElementById("quantity-input").value, 10);
-    if(!qty || qty<=0) return showAlert("正しい数量を入力してください");
-    
-    const targetItem = state.itemList.find(i => i.itemId === state.stockUpdate.itemId);
-    const isOut = state.stockUpdate.action === "出庫";
-    if (targetItem && isOut && (targetItem.stock - qty) < 0) {
-      return showAlert("在庫数がマイナスになります。");
-    }
-
-    if (targetItem) {
-      targetItem.stock += (isOut ? -qty : qty);
-      if (!isOut) targetItem.orderedQuantity = Math.max(0, targetItem.orderedQuantity - qty);
-      saveLocalCache(state.itemList);
-    }
-    
-    const updatePayload = { itemId: state.stockUpdate.itemId, type: state.stockUpdate.action, quantity: qty, department: state.otherUserInfo.department, phs: state.otherUserInfo.phs };
-    document.getElementById("quantity-input").value = "";
-    
-    showView("view-item-list", true);
-    renderItems();
-
-    const res = await callGasApi("stock_update", updatePayload, 0, true);
-    if (res && res.message && res.message.includes('カート')) {
-      showAlert(res.message);
-    } else if (!res) {
-      showAlert("通信エラーが発生したため、最新の在庫を再取得します。", () => loadItems(true));
-    }
-  });
-
-  document.getElementById("edit-item-save").addEventListener("click", async () => {
-    const payload = {
-      itemId: currentEditItemId,
-      itemName: document.getElementById("edit-item-name").value.trim(),
-      stock: Number(document.getElementById("edit-stock").value),
-      reorderPoint: Number(document.getElementById("edit-reorder-point").value),
-      price: Number(document.getElementById("edit-price").value),
-      parLevel: document.getElementById("edit-par-level").value.trim(),
-      orderedQuantity: Number(document.getElementById("edit-ordered-quantity").value),
-      unitsPerPkg: Math.max(1, Number(document.getElementById("edit-units-per-pkg").value) || 1),
-      minOrderUnits: Math.max(1, Number(document.getElementById("edit-min-order-units").value) || 1),
-      orderUnitName: document.getElementById("edit-order-unit-name").value.trim()
-    };
-    if(!payload.itemName) return showAlert("物品名は必須です");
-    
-    const target = state.itemList.find(i => i.itemId === currentEditItemId);
-    if (target) { Object.assign(target, payload); saveLocalCache(state.itemList); }
-    dom.modals.edit.classList.add("hidden");
-    renderItems();
-
-    await callGasApi("update_item", payload, 0, true);
-  });
-
-  // 棚卸し
-  document.getElementById("inventory-count-button").addEventListener("click", async () => {
-    toggleLoading(true);
-    const itemsPromise = state.itemList.length > 0 ? Promise.resolve({ data: state.itemList }) : callGasApi("get_item_list");
-    const [itemsRes, progRes] = await Promise.all([itemsPromise, callGasApi("get_inventory_progress")]);
-    toggleLoading(false);
-    if(itemsRes && itemsRes.data) {
-      saveLocalCache(itemsRes.data);
-      state.inventoryCount.items = state.itemList;
-      state.inventoryCount.currentIndex = progRes ? (progRes.currentIndex || 0) : 0;
-      displayCurrentInventoryItem();
-      showView("view-inventory-count");
-    }
-  });
-
-  const displayCurrentInventoryItem = () => {
-    const { items, currentIndex } = state.inventoryCount;
-    if(currentIndex >= items.length) {
-      callGasApi("save_inventory_progress", { currentIndex: 0 }, 0, true);
-      showDoneAnd("棚卸し完了", "全ての物品の確認が終わりました。", goHome); return; 
-    }
-    const item = items[currentIndex];
-    state.inventoryCount.currentItemId = item.itemId;
-    document.getElementById("inventory-count-progress").textContent = `${currentIndex+1} / ${items.length}`;
-    document.getElementById("inventory-item-name").textContent = item.itemName;
-    document.getElementById("inventory-usefor").textContent = item.useFor || "—";
-    setProgressiveImage(document.getElementById("inventory-image"), item.imageUrl);
-    
-    if (currentIndex + 1 < items.length) {
-      const nextImgId = extractDriveFileId(items[currentIndex + 1].imageUrl);
-      if (nextImgId) { const pre = new Image(); pre.src = `https://lh3.googleusercontent.com/d/${nextImgId}=s480-c`; }
-    }
-
-    const input = document.getElementById("inventory-actual-stock");
-    input.value = item.stock; input.focus();
-    sizeInventoryView();
-  };
-
-  document.getElementById("inventory-confirm-button").addEventListener("click", () => {
-    const qty = parseInt(document.getElementById("inventory-actual-stock").value, 10);
-    if(isNaN(qty) || qty < 0) return showAlert("有効な在庫数を入力してください");
-    
-    const currentId = state.inventoryCount.currentItemId;
-    const nextIndex = state.inventoryCount.currentIndex + 1;
-
-    const target = state.itemList.find(i => i.itemId === currentId);
-    if (target) { target.stock = qty; saveLocalCache(state.itemList); }
-    
-    state.inventoryCount.currentIndex = nextIndex;
-    displayCurrentInventoryItem();
-
-    callGasApi("stock_update", {
-      itemId: currentId, type: "棚卸修正", quantity: qty, isCorrection: true,
-      nextInventoryIndex: nextIndex >= state.inventoryCount.items.length ? 0 : nextIndex
-    }, 0, true);
-  });
-
-  document.getElementById("inventory-prev-button").addEventListener("click", () => {
-    if (state.inventoryCount.currentIndex > 0) {
-      const prevIndex = state.inventoryCount.currentIndex - 1;
-      state.inventoryCount.currentIndex = prevIndex;
-      displayCurrentInventoryItem();
-      callGasApi("save_inventory_progress", { currentIndex: prevIndex }, 0, true);
-    } else {
-      showAlert("これが最初の物品です。");
-    }
-  });
-
-  document.getElementById("inventory-back-button").addEventListener("click", () => goHome());
-
-  const formatPkgLabel = (qty, item) => {
-    const pkg = Math.max(1, Number(item.unitsPerPkg) || 1);
-    const uName = item.orderUnitName || (pkg > 1 ? '単位' : '');
-    if (pkg === 1 && !uName) return '';
-    const pkgCount = qty / pkg;
-    return `＝ 発注書表記: ${pkgCount}${uName}`;
-  };
-
-  document.getElementById("cart-button").addEventListener("click", async () => {
-    toggleLoading(true);
-    const res = await callGasApi("get_cart");
-    toggleLoading(false);
-    if(res) {
-      state.cartItems = res.data;
-      const c = document.getElementById("cart-container");
-      if(!state.cartItems.length) { c.innerHTML = '<p class="text-center text-gray-500 py-6">発注が必要な物品はありません。</p>'; document.getElementById("submit-cart-button").classList.add("hidden"); showView("view-cart"); return; }
-      document.getElementById("submit-cart-button").classList.remove("hidden");
-      
-      const grouped = {};
-      state.cartItems.forEach(i => { const s = i.supplierEmail || '未設定'; if(!grouped[s]) grouped[s]=[]; grouped[s].push(i); });
-      c.innerHTML = Object.keys(grouped).map(sup => `
-        <div class="border rounded-lg p-3 bg-white shadow-sm border-blue-200">
-          <h3 class="font-bold text-blue-800 border-b pb-2 mb-3 text-sm">宛先: ${sup}</h3>
-          <div class="space-y-4">
-            ${grouped[sup].map(i => {
-              const step = i.orderStep || 1;
-              const pkg = Number(i.unitsPerPkg) || 1;
-              const minLot = Number(i.minOrderUnits) || 1;
-              const uName = i.orderUnitName || '単位';
-              const ruleText = step > 1 ? `<div class="text-[11px] text-blue-700 font-semibold mt-0.5">📦 1${uName}＝${pkg}個入 ／ 最低 ${minLot}${uName}（バラ${step}個）単位で発注</div>` : '';
-              const convLabel = formatPkgLabel(i.suggestedQty, i);
-
-              return `
-              <div class="text-sm border-l-4 border-pink-400 pl-2">
-                <div class="font-semibold">${i.itemName}</div>${ruleText}
-                <div class="flex justify-between items-center mt-2">
-                  <div class="text-xs text-gray-600">在庫: <b>${i.stock}</b> / 未納: <b>${i.orderedQuantity}</b> / 点: <b class="text-red-500">${i.reorderPoint}</b></div>
-                  <div class="flex flex-col items-end">
-                    <div class="flex items-center space-x-1.5 bg-pink-50 p-1 rounded">
-                      <label class="text-xs font-bold text-pink-700">バラ総数:</label>
-                      <input type="number" class="cart-qty-input border border-pink-300 rounded w-16 p-1 text-center font-bold text-lg" data-id="${i.itemId}" step="${step}" min="0" value="${i.suggestedQty}">
-                    </div>
-                    <span class="cart-conv-label text-xs font-bold text-pink-700 mt-0.5" data-id="${i.itemId}">${convLabel}</span>
-                  </div>
-                </div>
-              </div>
-            `}).join('')}
-          </div>
-        </div>
-      `).join('');
-
-      c.querySelectorAll('.cart-qty-input').forEach(inp => {
-        inp.addEventListener('input', (e) => {
-          const item = state.cartItems.find(x => x.itemId === e.target.dataset.id);
-          const lbl = c.querySelector(`.cart-conv-label[data-id="${e.target.dataset.id}"]`);
-          if (item && lbl) lbl.textContent = formatPkgLabel(Number(e.target.value) || 0, item);
-        });
-      });
-
-      showView("view-cart");
-    }
-  });
-
-  document.getElementById("submit-cart-button").addEventListener("click", () => {
-    const orders = [];
-    let invalidMsg = null;
-
-    document.querySelectorAll('.cart-qty-input').forEach(inp => {
-      const q = parseInt(inp.value, 10);
-      if(q > 0) {
-        const i = state.cartItems.find(x => x.itemId === inp.dataset.id);
-        if(i) {
-          const step = i.orderStep || 1;
-          if (q % step !== 0) {
-            const uName = i.orderUnitName || '単位';
-            invalidMsg = `「${i.itemName}」は バラ${step}個（＝${i.minOrderUnits}${uName}）の倍数で入力してください。`;
-          }
-          orders.push({...i, quantity: q});
-        }
-      }
-    });
-
-    if (invalidMsg) return showAlert(invalidMsg);
-    if(!orders.length) return showAlert('発注する物品がありません。');
-
-    showConfirm(`${orders.length}件の物品を一括発注します。よろしいですか？`, async () => {
-      hideAllModals(); toggleLoading(true);
-      const res = await callGasApi("submit_batch_orders", { orders });
-      toggleLoading(false);
-      if(res) { clearCache(); prefetchItems(); showDoneAnd("一括発注 完了", res.message, goHome); }
-    });
-  });
-
-  // 月次レポート
-  document.getElementById("report-button").addEventListener("click", () => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    document.getElementById("report-month-input").value = `${yyyy}-${mm}`;
-    showView("view-report");
-  });
-
-  document.getElementById("download-report-button").addEventListener("click", async () => {
-    const month = document.getElementById("report-month-input").value;
-    if(!month) return showAlert("対象月を選択してください。");
-    
-    toggleLoading(true);
-    const res = await callGasApi("get_monthly_report", { targetMonth: month });
-    toggleLoading(false);
-    
-    if(res && res.data) {
-      if(res.data.length === 0) return showAlert("指定した月のデータはありません。");
-      
-      const headers = ["日時", "物品ID", "物品名", "種別", "数量", "単価", "合計金額", "担当者", "部署"];
-      let csvContent = "\uFEFF" + headers.join(",") + "\n";
-      
-      res.data.forEach(r => {
-        const row = [ r.date, r.itemId, `"${r.itemName}"`, r.type, r.quantity, r.price, r.totalAmount, `"${r.user}"`, `"${r.department}"` ];
-        csvContent += row.join(",") + "\n";
-      });
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `在庫履歴レポート_${month}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      showDoneAnd("出力完了", "CSVファイルのダウンロードを開始しました。", goHome);
-    }
-  });
-
-  // History
-  document.getElementById("order-history-button").addEventListener("click", async () => {
-    toggleLoading(true); const res = await callGasApi("get_order_history"); toggleLoading(false);
-    if(res) {
-      document.getElementById("order-history-list").innerHTML = res.data.length === 0 ? `<p class="text-center text-gray-500">履歴はありません。</p>` : res.data.map(r => `
-        <div class="border rounded-md p-3 flex justify-between items-center bg-white shadow-sm">
-          <div><p class="font-semibold">${r.itemName}</p><p class="text-xs text-gray-500">${r.orderDate} / 数量: ${r.quantity} / ${r.status}</p></div>
-          ${r.status==="注文済み" ? `<button class="cancel-order-button bg-blue-500 text-white px-3 py-1 rounded text-sm" data-mail="${r.mailId}" data-hist="${r.historyId}">キャンセル</button>` : ``}
-        </div>
-      `).join("");
-      showView("view-order-history");
-    }
-  });
-
-  document.getElementById("order-history-list").addEventListener("click", (e) => {
-    const btn = e.target.closest(".cancel-order-button"); if(!btn) return;
-    showConfirm("この注文をキャンセルしますか？", async () => {
-      hideAllModals(); toggleLoading(true);
-      const res = await callGasApi("cancel_order", { mailId: btn.dataset.mail, historyId: btn.dataset.hist });
-      toggleLoading(false);
-      if(res) { clearCache(); prefetchItems(); showAlert("キャンセルしました。", () => document.getElementById("order-history-button").click()); }
-    });
-  });
-
-  // Photo
-  function compressImageToDataUrl(file){
-    return new Promise((res,rej)=>{
-      const img=new Image(), reader=new FileReader();
-      reader.onload=()=>{
-        img.onload=()=>{
-          let {width,height}=img; const scale=Math.min(1,1024/Math.max(width,height));
-          width=Math.round(width*scale); height=Math.round(height*scale);
-          const canvas=document.createElement("canvas"); canvas.width=width; canvas.height=height;
-          canvas.getContext("2d").drawImage(img,0,0,width,height);
-          res(canvas.toDataURL("image/jpeg",0.8));
-        };
-        img.onerror=()=>rej(new Error("画像読込失敗")); img.src=reader.result;
-      };
-      reader.onerror=()=>rej(new Error("ファイル読込失敗")); reader.readAsDataURL(file);
-    });
-  }
-
-  function pickAndUploadPhoto(itemId){
-    const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.capture="environment";
-    inp.onchange=async()=>{
-      const file=inp.files[0]; if(!file) return;
-      try{
-        toggleLoading(true); const dataUrl=await compressImageToDataUrl(file);
-        const [pfx,base64]=dataUrl.split(","); const mime=(pfx.match(/data:(.*?);base64/)||[])[1]||"image/jpeg";
-        const res = await callGasApi("upload_item_image", { itemId, base64, mimeType:mime, fileName:file.name.replace(/[^\w.-]/g,"_") });
-        toggleLoading(false);
-        if(res) { clearCache(); showAlert("画像を登録しました。", () => loadItems(true)); }
-      }catch(e){ toggleLoading(false); showAlert("エラー: "+e.message); }
-    };
-    inp.click();
-  }
-
-  // Register New
-  document.getElementById("new-item-button").addEventListener("click", () => {
-    loadSupplierEmails();
-    updateRulePreview('new');
-    showView("view-new-item");
-  });
-  let newItemPhotoUrl = '';
-  document.getElementById("new-item-photo-button").addEventListener("click", () => {
-    const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.capture="environment";
-    inp.onchange=async()=>{
-      const file=inp.files[0]; if(!file) return;
-      try{ toggleLoading(true); newItemPhotoUrl=await compressImageToDataUrl(file); document.getElementById("new-item-photo-preview").innerHTML=`<img src="${newItemPhotoUrl}">`; showAlert("写真を選択しました。"); }
-      catch(e){ showAlert("エラー"); } finally { toggleLoading(false); }
-    }; inp.click();
-  });
-
-  document.getElementById("submit-new-item").addEventListener("click", async () => {
-    const payload = {
-      itemName: document.getElementById("new-item-name").value.trim(),
-      model: document.getElementById("new-model").value.trim(),
-      useFor: document.getElementById("new-use-for").value.trim(),
-      stock: Number(document.getElementById("new-stock").value),
-      reorderPoint: Number(document.getElementById("new-reorder-point").value),
-      parLevel: document.getElementById("new-par-level").value.trim(),
-      unitsPerPkg: Math.max(1, Number(document.getElementById("new-units-per-pkg").value) || 1),
-      minOrderUnits: Math.max(1, Number(document.getElementById("new-min-order-units").value) || 1),
-      orderUnitName: document.getElementById("new-order-unit-name").value.trim(),
-      price: Number(document.getElementById("new-price").value),
-      supplierEmail: document.getElementById("new-supplier-email").value.trim(),
-      imageUrl: newItemPhotoUrl
-    };
-    if(!payload.itemName || isNaN(payload.stock) || !payload.reorderPoint || !payload.price || !payload.supplierEmail) return showAlert("必須項目を入力してください");
-    toggleLoading(true);
-    const res = await callGasApi("item_register", payload);
-    toggleLoading(false);
-    if(res) {
-      clearCache();
-      prefetchItems();
-      showAlert("登録しました。");
-      document.querySelectorAll("#view-new-item input").forEach(i=>i.value="");
-      document.getElementById("new-units-per-pkg").value = "1";
-      document.getElementById("new-min-order-units").value = "1";
-      updateRulePreview('new');
-      newItemPhotoUrl=''; document.getElementById("new-item-photo-preview").innerHTML='<span class="text-gray-400 text-sm">写真未登録</span>';
-    }
-  });
-
-  // Listeners Misc
-  document.getElementById("item-list-button").addEventListener("click", () => loadItems(false));
-  document.getElementById("refresh-item-list").addEventListener("click", () => loadItems(true));
-  document.getElementById("item-search-input").addEventListener("input", renderItems);
-  document.getElementById("filter-reorder-needed").addEventListener("change", renderItems);
-  document.getElementById("filter-on-order").addEventListener("change", renderItems);
-  document.getElementById("edit-item-cancel").addEventListener("click", () => dom.modals.edit.classList.add("hidden"));
-  document.querySelectorAll(".back-button").forEach(b => b.addEventListener("click", e => { const t = e.currentTarget.dataset.target; t ? showView(t) : goBack(); }));
-  document.getElementById("main-menu-button").addEventListener("click", goHome);
-  document.getElementById("logout-button").addEventListener("click", () => { state.user = null; dom.loginId.value = ""; goHome(); showView("view-login"); });
-  document.getElementById("alert-ok-button").addEventListener("click", () => { dom.modals.alert.classList.add("hidden"); if(alertCb) alertCb(); alertCb=null; });
-  document.getElementById("confirm-cancel-button").addEventListener("click", () => dom.modals.confirm.classList.add("hidden"));
-  document.getElementById("confirm-ok-button").addEventListener("click", () => { dom.modals.confirm.classList.add("hidden"); if(confirmCb) confirmCb(); confirmCb=null; });
-  
-  const setupDrumroll = inp => {
-    inp.addEventListener("wheel", e => { e.preventDefault(); inp.value = Math.max(0, (parseInt(inp.value)||0) + (e.deltaY<0?1:-1)); }, {passive:false});
-    document.getElementById("roll-inc").addEventListener("click",()=>inp.value = Math.max(0, (parseInt(inp.value)||0)+1));
-    document.getElementById("roll-dec").addEventListener("click",()=>inp.value = Math.max(0, (parseInt(inp.value)||0)-1));
-  };
-  setupDrumroll(document.getElementById("inventory-actual-stock"));
-  
-  showView("view-login");
+/* =========================================================
+ * テンキー（電話と同じ並び）
+ *  ・指が触れた瞬間（pointerdown）に反応し、離すのを待たない
+ *  ・押すたびに画面全体は描き直さず、数字と案内の部分だけ書き換える
+ * ======================================================= */
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
+const KP = { value: '', max: 4, onChange: null };
+function keypadHTML() {
+  return `<div class="keypad">${KEYS.map(k => `<button type="button" data-key="${k}" aria-label="${k === '⌫' ? '1文字消す' : k === 'C' ? 'クリア' : k}">${k}</button>`).join('')}</div>`;
+}
+function setKP(value, max, onChange) { KP.value = value; KP.max = max; KP.onChange = onChange; onChange(KP.value); }
+function pressKey(k) {
+  let v = KP.value;
+  if (k === '⌫') v = v.slice(0, -1);
+  else if (k === 'C') v = '';
+  else if (v.length < KP.max) v = (v === '0' ? '' : v) + k;
+  KP.value = v;
+  if (KP.onChange) KP.onChange(v);
+}
+let lastPointer = 0;
+document.addEventListener('pointerdown', ev => {
+  const b = ev.target.closest('[data-key]');
+  if (!b || b.disabled) return;
+  ev.preventDefault();               // フォーカス移動や長押しメニューを止めて、次のタップを取りこぼさない
+  lastPointer = Date.now();
+  b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 110);
+  pressKey(b.dataset.key);
 });
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-key]');
+  if (!b) return;
+  if (Date.now() - lastPointer < 700) return;   // タッチで処理済み。キーボード操作（Enter）のときだけここで受ける
+  pressKey(b.dataset.key);
+}, true);
+const $ = id => document.getElementById(id);
+
+/* =================== 画面 =================== */
+function render() {
+  const w = $('who');
+  w.hidden = !S.user;
+  w.textContent = S.user ? `${S.user.name.split(/\s|　/)[0]} ▾` : '';
+  app.className = '';
+  const V = { login: renderLogin, home: renderHome, items: renderItems, stock: renderStock, count: renderCount,
+    form: renderForm, cart: renderCart, history: renderHistory, alerts: renderAlerts, report: renderReport };
+  (V[S.view] || renderHome)();
+  updateSync();
+}
+function go(view) { S.view = view; render(); window.scrollTo(0, 0); }
+const head = (title, sub, backTo = 'home', backLabel = 'ホーム') =>
+  `<div class="entry-head"><button class="back" data-act="go" data-v="${backTo}">‹ ${backLabel}</button><h2>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</h2></div>`;
+
+/* ---- ログイン ---- */
+function renderLogin() {
+  app.className = 'with-sheet';
+  app.innerHTML = `
+    <p class="who-title">ユーザー番号</p>
+    <p class="muted" style="margin:0">5桁の番号を入力してください</p>
+    <div class="boxes num" id="boxes"></div>
+    <p class="hint" id="lh"></p>
+    <div class="sheet"><div class="sheet-in">${keypadHTML()}</div></div>`;
+  setKP(S.login || '', 5, v => {
+    S.login = v;
+    $('boxes').innerHTML = [0, 1, 2, 3, 4].map(i => `<div class="box ${i === v.length ? 'on' : ''}">${esc(v[i] || '')}</div>`).join('');
+    $('lh').textContent = v.length < 5 ? `あと${5 - v.length}桁` : '確認しています…';
+    $('lh').className = 'hint';
+    if (v.length === 5) doLogin(v);
+  });
+}
+async function doLogin(id) {
+  try {
+    const r = await call('login', { loginId: id });
+    S.user = r.data; S.login = '';
+    store.set('session', { user: S.user, day: todayStr() });
+    S.items = store.get('items_' + S.user.role, []);
+    S.itemsLoaded = false; S.alerts = null; S.orders = null;
+    go('home'); loadItems(true); loadAlerts(true); if (isAdmin()) loadOrders();
+    kick(0);
+  } catch (e) {
+    if (S.view !== 'login') return;
+    $('lh').textContent = e.server ? '番号が見つかりません。もう一度入力してください' : e.message;
+    $('lh').className = 'hint alert';
+    KP.value = ''; S.login = '';
+    $('boxes').innerHTML = [0, 1, 2, 3, 4].map(i => `<div class="box ${i === 0 ? 'on' : ''}"></div>`).join('');
+  }
+}
+function logout(expired) {
+  if (!expired && OB.ops.length && !confirm(`未送信の記録が${OB.ops.length}件あります。ログアウトすると送信されません。よろしいですか？`)) return;
+  if (!expired && !OB.ops.length && !confirm('ログアウトしますか？')) return;
+  if (S.user) store.del('items_' + S.user.role);
+  store.del('session'); OB.ops = []; saveOutbox();
+  S.user = null; S.items = []; S.alerts = null; S.orders = null; S.cart = null;
+  go('login');
+  if (expired) toast('もう一度ログインしてください');
+}
+
+/* ---- ホーム ---- */
+function needOrder(i) { return (i.stock + i.orderedQuantity) < i.reorderPoint; }
+function renderHome() {
+  const items = S.items;
+  const nNeed = items.filter(needOrder).length;
+  const nOpen = items.filter(i => i.orderedQuantity > 0).length;
+  const prog = store.get('countProg', null);
+  const progN = prog && prog.day === todayStr() ? prog.index : 0;
+  const nAlerts = S.alerts ? S.alerts.length : 0;
+  let monthTotal = null;
+  if (isAdmin() && S.orders) {
+    const m = todayStr().slice(0, 7);
+    monthTotal = S.orders.filter(o => o.date.startsWith(m) && o.status !== 'キャンセル済み').reduce((a, o) => a + (o.total || 0), 0);
+  }
+  app.innerHTML = `
+    ${S.error ? `<div class="banner err">${esc(S.error)}</div>` : ''}
+    ${nAlerts ? `<button class="alertbar" data-act="go" data-v="alerts"><b>要確認 ${nAlerts}件</b><span>入庫・未納・棚卸しで合わないものがあります</span><b aria-hidden="true">›</b></button>` : ''}
+    <h2 class="sec">今日の状況</h2>
+    <div class="stats num">
+      <button class="stat ${nNeed ? 'warn' : ''}" data-act="items" data-f="need"><div class="lab">要発注</div><div class="v">${nNeed}<small>品目</small></div></button>
+      <button class="stat" data-act="items" data-f="open"><div class="lab">未納の物品</div><div class="v">${nOpen}<small>品目</small></div></button>
+      <button class="stat" data-act="count"><div class="lab">棚卸し（今日）</div><div class="v">${progN}<small>/ ${items.length}</small></div>
+        <div class="progress"><i style="width:${items.length ? progN / items.length * 100 : 0}%"></i></div></button>
+      ${isAdmin() ? `<button class="stat" data-act="go" data-v="history"><div class="lab">今月の発注額 <span class="chip adm">管理者</span></div><div class="v">${monthTotal === null ? '…' : yen(monthTotal)}</div></button>`
+        : `<button class="stat" data-act="go" data-v="alerts"><div class="lab">要確認</div><div class="v">${S.alerts ? nAlerts : '…'}<small>件</small></div></button>`}
+    </div>
+    <h2 class="sec">メニュー</h2>
+    <div class="menu">
+      <button class="mtile" data-act="items" data-f="all"><span class="lab">在庫を見る・入庫・出庫</span><span class="t">物品一覧</span></button>
+      <button class="mtile" data-act="count"><span class="lab">${progN ? `前回の続き ${progN + 1}品目めから` : '最初の物品から'}</span><span class="t">棚卸し</span></button>
+      ${isAdmin() ? `<button class="mtile" data-act="cart"><span class="lab">要発注 ${nNeed} <span class="chip adm">管理者</span></span><span class="t">発注カート</span></button>` : ''}
+      <button class="mtile" data-act="go" data-v="history"><span class="lab">日別・物品別に検索</span><span class="t">発注履歴</span></button>
+      <button class="mtile" data-act="register"><span class="lab">写真・発注ルール</span><span class="t">新規物品登録</span></button>
+      ${isAdmin() ? `<button class="mtile" data-act="go" data-v="report"><span class="lab">CSV出力 <span class="chip adm">管理者</span></span><span class="t">月次レポート</span></button>` : ''}
+    </div>
+    <p class="muted" style="font-size:12px;text-align:center;margin-top:18px">在庫管理 ${VERSION}</p>`;
+}
+
+/* ---- 物品一覧 ---- */
+const FILTERS = [['all', 'すべて'], ['need', '要発注'], ['low', '発注点以下'], ['open', '未納あり']];
+function renderItems() {
+  app.innerHTML = `
+    ${head('物品一覧')}
+    <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="search" placeholder="物品名・型番・用途で検索" aria-label="検索" value="${esc(S.q)}" autocomplete="off"></label>
+    <div class="filters">${FILTERS.map(([id, l]) => `<button class="${S.itemsFilter === id ? 'on' : ''}" data-act="filter" data-f="${id}">${l}</button>`).join('')}</div>
+    <div id="ilist"></div>`;
+  renderItemList();
+}
+function renderItemList() {
+  const q = S.q.trim().toLowerCase();
+  const f = S.itemsFilter;
+  const rows = S.items.filter(i => {
+    if (f === 'need' && !needOrder(i)) return false;
+    if (f === 'low' && !(i.stock <= i.reorderPoint)) return false;
+    if (f === 'open' && !(i.orderedQuantity > 0)) return false;
+    if (q && !(`${i.itemName} ${i.model} ${i.useFor}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const el = $('ilist'); if (!el) return;
+  if (!S.items.length) { el.innerHTML = `<div class="empty-msg">${S.itemsLoaded ? '物品が登録されていません' : '読み込んでいます…'}</div>`; return; }
+  el.innerHTML = `<div class="cnt"><span>${rows.length} 品目</span></div>
+    <div class="list">${rows.length ? rows.map(itemRow).join('') : '<div class="empty-msg">条件に合う物品がありません</div>'}</div>`;
+}
+function itemRow(i) {
+  const lvl = i.stock === 0 ? 'alert' : i.stock < i.reorderPoint ? 'warn' : '';
+  const chip = i.orderedQuantity > 0 ? `<span class="chip ${lvl}">未納 ${i.orderedQuantity}</span>` : needOrder(i) ? `<span class="chip ${lvl || 'warn'}">要発注</span>` : '';
+  const sub = [i.model, i.useFor].filter(Boolean).join('・');
+  return `<div class="irow ${lvl}">
+    <button class="info" data-act="edit" data-id="${i.itemId}"><div class="nm">${esc(i.itemName)}</div>
+      <div class="md"><span>${esc(sub)}</span>${chip}${isAdmin() ? `<span>${yen(i.price)}</span>` : ''}</div></button>
+    <div class="stock num"><b>${i.stock}</b><span>発注点 ${i.reorderPoint}</span></div>
+    <div class="acts"><button class="ab in" data-act="stock" data-id="${i.itemId}" data-t="in">入庫</button><button class="ab" data-act="stock" data-id="${i.itemId}" data-t="out">出庫</button></div>
+  </div>`;
+}
+
+/* ---- 入庫・出庫 ---- */
+function openStock(id, dir) {
+  const it = itemById(id); if (!it) return;
+  S.stock = { id, dir, kind: 'normal', back: S.view === 'alerts' ? 'alerts' : 'items' };
+  go('stock');
+}
+function renderStock() {
+  const st = S.stock, it = itemById(st.id);
+  if (!it) { go('items'); return; }
+  const isIn = st.dir === 'in';
+  app.className = 'with-sheet';
+  app.innerHTML = `
+    ${head(it.itemName, [it.model, it.useFor].filter(Boolean).join('・'), st.back, st.back === 'alerts' ? '要確認' : '一覧')}
+    ${isIn ? `<div class="kind">
+      <button class="${st.kind === 'normal' ? 'on' : ''}" data-act="kind" data-k="normal">通常入庫<small>発注した物が届いた</small></button>
+      <button class="${st.kind === 'warranty' ? 'on w' : ''}" data-act="kind" data-k="warranty">メーカー保証品<small>無償・未納は減らない</small></button></div>
+      <div class="infoline"><span>未納の発注</span><b class="num">${it.orderedQuantity}個</b></div>` : ''}
+    <div class="tiles num">
+      <div class="tile"><span class="lab">在庫</span><span class="tv">${it.stock}<small id="after"></small></span><span class="tsub">いまの帳簿</span></div>
+      <div class="tile act" id="qtile"><span class="lab">${isIn ? '入庫数' : '出庫数'}</span><span class="tv"><span id="kv">－</span><small>個</small></span><span class="tsub">バラの個数</span></div>
+    </div>
+    <div class="sheet"><div class="sheet-in">
+      <div class="sheet-head"><b>${isIn ? '入庫数' : '出庫数'}</b><button class="go" id="kgo" data-act="stockGo" disabled>${isIn ? '入庫する' : '出庫する'}</button></div>
+      <div class="hint" id="kh"></div>${keypadHTML()}</div></div>`;
+  setKP(st.value || '', 4, v => {
+    st.value = v;
+    const n = Number(v || 0);
+    $('kv').textContent = v || '－';
+    $('after').textContent = n ? ` → ${isIn ? it.stock + n : it.stock - n}` : '';
+    let hint = isIn ? '入庫した数を入力してください' : '使った数を入力してください', cls = 'hint', ok = n > 0;
+    if (n && isIn && st.kind === 'warranty') { hint = `保証品として記録します。未納（${it.orderedQuantity}個）はそのまま、金額は0円です`; cls = 'hint ok'; }
+    else if (n && isIn && n > it.orderedQuantity) { hint = `未納（${it.orderedQuantity}個）より多い数です。保証品が混ざっていませんか？ このまま記録すると、多い分は「要確認」に入ります`; cls = 'hint alert'; }
+    else if (n && isIn) hint = `未納 ${it.orderedQuantity}個 → ${it.orderedQuantity - n}個 になります`;
+    else if (n && !isIn && n > it.stock) { hint = `在庫（${it.stock}個）より多くは出庫できません`; cls = 'hint alert'; ok = false; }
+    else if (n && !isIn && it.stock - n < it.reorderPoint) { hint = `出庫後 ${it.stock - n}個。発注点（${it.reorderPoint}）を下回ります`; cls = 'hint warn'; }
+    $('kh').textContent = hint; $('kh').className = cls;
+    $('kgo').disabled = !ok;
+  });
+}
+function stockGo() {
+  const st = S.stock, it = itemById(st.id), n = Number(st.value || 0);
+  if (!it || !n) return;
+  const type = st.dir === 'out' ? '出庫' : st.kind === 'warranty' ? '保証品入庫' : '入庫';
+  enqueue('stock_update', { itemId: it.itemId, itemName: it.itemName, type, quantity: n }, { itemId: it.itemId, type, quantity: n });
+  toast(`${it.itemName}：${type} ${n}個`);
+  const back = st.back; S.stock = null; go(back === 'alerts' ? 'alerts' : 'items');
+}
+
+/* ---- 棚卸し ---- */
+async function openCount() {
+  const prog = store.get('countProg', null);
+  S.count = { index: prog && prog.day === todayStr() ? prog.index : 0, value: '', loading: true };
+  go('count');
+  try {
+    const r = await call('get_inventory_progress');
+    if (S.count && S.count.loading) { S.count.index = Math.max(S.count.index, Number(r.currentIndex) || 0); }
+  } catch (_) {}
+  if (S.count) { S.count.loading = false; if (S.view === 'count') render(); }
+}
+function countItems() { return S.items.slice().sort((a, b) => Number(a.itemId) - Number(b.itemId)); }
+function driveId(u) {
+  if (!u) return null; if (/^[A-Za-z0-9_-]{20,}$/.test(u)) return u;
+  const m = String(u).match(/\/d\/([A-Za-z0-9_-]+)/) || String(u).match(/[?&]id=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+const imgURL = (u, size) => { const id = driveId(u); return id ? `https://lh3.googleusercontent.com/d/${id}=s${size}-c` : ''; };
+function renderCount() {
+  const list = countItems(), c = S.count;
+  if (!list.length) { app.innerHTML = `${head('棚卸し')}<div class="empty-msg">${S.itemsLoaded ? '物品がありません' : '読み込んでいます…'}</div>`; return; }
+  if (c.index >= list.length) c.index = 0;
+  const it = list[c.index];
+  const img = imgURL(it.imageUrl, 240);
+  const next = list[c.index + 1];
+  if (next && next.imageUrl) { const p = new Image(); p.src = imgURL(next.imageUrl, 240); }
+  app.className = 'with-sheet';
+  app.innerHTML = `
+    <div class="nav"><button class="back" data-act="countPrev" ${c.index ? '' : 'disabled'}>‹ 前へ</button>
+      <span class="sp num">棚卸し ${c.index + 1} / ${list.length}</span><button class="back" data-act="go" data-v="home">中断</button></div>
+    <div class="progress" style="margin-bottom:8px"><i style="width:${(c.index + 1) / list.length * 100}%"></i></div>
+    <div class="card">
+      <div class="ph">${img ? `<img src="${img}" alt="${esc(it.itemName)}の写真">` : '写真なし'}</div>
+      <div><div class="nm">${esc(it.itemName)}</div><div class="md">${esc([it.model, it.useFor].filter(Boolean).join('・'))}</div><div class="md num">発注点 ${it.reorderPoint}${it.orderedQuantity ? `・未納 ${it.orderedQuantity}` : ''}</div></div>
+    </div>
+    <div class="tiles num">
+      <div class="tile"><span class="lab">帳簿の在庫</span><span class="tv">${it.stock}<small>個</small></span><span class="tsub">${esc((it.updatedAt || '').slice(5, 10).replace('/', '/'))}${it.updatedAt ? ' 更新' : ''}</span></div>
+      <div class="tile act" id="ctile"><span class="lab">数えた数</span><span class="tv"><span id="kv">－</span><small>個</small></span><span class="tsub" id="cdiff"></span></div>
+    </div>
+    <div class="sheet"><div class="sheet-in">
+      <div class="sheet-head"><b>数えた数</b><button data-act="countSame">帳簿と同じ</button><button class="go" id="kgo" data-act="countGo" disabled>確定して次へ</button></div>
+      <div class="hint" id="kh"></div>${keypadHTML()}</div></div>`;
+  setKP(c.value, 4, v => {
+    c.value = v;
+    const has = v !== '', n = Number(v || 0), d = n - it.stock;
+    $('kv').textContent = has ? String(n) : '－';
+    let hint = '棚にある数を入力してください', cls = 'hint', diff = '', tile = 'tile act';
+    if (has && d === 0) { hint = '帳簿と一致しています'; cls = 'hint ok'; diff = '一致'; }
+    else if (has) { hint = `帳簿より ${d > 0 ? '+' : ''}${d}個。確定すると「要確認」に入ります（入庫・出庫の記録漏れの可能性）`; cls = 'hint warn'; diff = `帳簿より ${d > 0 ? '+' : ''}${d}`; tile = 'tile act warn'; }
+    $('kh').textContent = hint; $('kh').className = cls;
+    $('cdiff').textContent = diff; $('ctile').className = tile;
+    $('kgo').disabled = !has;
+  });
+}
+function countGo() {
+  const list = countItems(), c = S.count, it = list[c.index];
+  if (c.value === '') return;
+  const n = Number(c.value), next = c.index + 1 >= list.length ? 0 : c.index + 1;
+  if (n !== it.stock) {
+    enqueue('stock_update', { itemId: it.itemId, itemName: it.itemName, type: '棚卸修正', quantity: n, nextInventoryIndex: next },
+      { itemId: it.itemId, type: '棚卸修正', quantity: n });
+  } else {
+    enqueue('save_inventory_progress', { currentIndex: next });
+  }
+  store.set('countProg', { day: todayStr(), index: next });
+  if (next === 0) { toast('すべての物品の棚卸しが終わりました'); S.count = null; go('home'); return; }
+  c.index = next; c.value = ''; render(); window.scrollTo(0, 0);
+}
+
+/* ---- 物品の編集・新規登録 ---- */
+async function loadSuppliers() {
+  if (S.suppliers.length) return;
+  try { const r = await call('get_supplier_emails'); S.suppliers = r.data || []; if (S.view === 'form') render(); } catch (_) {}
+}
+function openForm(id) {
+  const it = id ? itemById(id) : null;
+  S.form = it ? Object.assign({ mode: 'edit', photo: '' }, it) : { mode: 'new', itemName: '', model: '', useFor: '', stock: '', reorderPoint: '', parLevel: '', orderUnitName: '', unitsPerPkg: 1, minOrderUnits: 1, price: '', supplierEmail: '', photo: '' };
+  loadSuppliers(); go('form');
+}
+function renderForm() {
+  const f = S.form, isNew = f.mode === 'new', adm = isAdmin();
+  const img = f.photo || imgURL(f.imageUrl, 240);
+  const inp = (k, label, type = 'text', req = false, extra = '') =>
+    `<div class="field"><label for="f-${k}">${label}${req ? '<em>必須</em>' : ''}</label><input id="f-${k}" data-f="${k}" type="${type === 'num' ? 'text' : type}" ${type === 'num' ? 'inputmode="numeric" pattern="[0-9]*"' : ''} value="${esc(f[k] ?? '')}" ${extra}></div>`;
+  const sups = S.suppliers.slice(); if (f.supplierEmail && !sups.includes(f.supplierEmail)) sups.unshift(f.supplierEmail);
+  app.className = 'with-bar';
+  app.innerHTML = `
+    ${head(isNew ? '新規物品登録' : '物品の情報', isNew ? '' : '在庫数は入出庫か棚卸しで変えます', isNew ? 'home' : 'items', isNew ? 'ホーム' : '一覧')}
+    <div class="form">
+      <div class="fgrp"><div class="photo-row"><div class="ph">${img ? `<img src="${esc(img)}" alt="物品の写真">` : '写真なし'}</div>
+        <button class="btn" data-act="photo">${img ? '写真を変える' : '写真を登録'}</button></div></div>
+      <div class="fgrp"><h3>基本の情報</h3>
+        ${inp('itemName', '物品名', 'text', true)}${inp('model', '型番・規格')}${inp('useFor', '用途（機種など）')}</div>
+      <div class="fgrp"><h3>在庫の管理（ふだん数えるバラの個数）</h3>
+        ${isNew ? inp('stock', '今ある数', 'num', true) : ''}
+        <div class="row2">${inp('reorderPoint', '発注点', 'num', true)}${inp('parLevel', '発注上限', 'num')}</div>
+        <p class="fnote">在庫＋未納が発注点を下回ると発注カートに入り、発注上限まで補う数が提案されます。</p>
+        ${!isNew && adm ? inp('orderedQuantity', '未納の数（発注中）', 'num') : ''}</div>
+      <div class="fgrp"><h3>業者への発注ルール</h3>
+        <div class="row2">${inp('orderUnitName', '発注の単位（袋・箱など）')}${inp('unitsPerPkg', '1単位の入数', 'num')}</div>
+        ${inp('minOrderUnits', '最低いくつずつ注文するか（単位）', 'num')}
+        ${isNew || adm ? `<div class="field"><label for="f-supplierEmail">発注先</label><select id="f-supplierEmail" data-f="supplierEmail">
+          <option value="">選んでください</option>${sups.map(s => `<option ${s === f.supplierEmail ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>` : ''}
+        ${adm ? inp('price', 'バラ1個の単価（円）', 'num') : `<p class="fnote">単価は管理者が設定します。</p>`}</div>
+    </div>
+    <div class="savebar"><button data-act="formSave">${isNew ? '登録する' : '保存する'}</button></div>`;
+}
+document.addEventListener('input', ev => {
+  const k = ev.target.dataset && ev.target.dataset.f;
+  if (k && S.form && S.view === 'form') S.form[k] = ev.target.value;
+  if (ev.target.id === 'q') { S.q = ev.target.value; renderItemList(); }
+  if (ev.target.id === 'hq') { S.hist.q = ev.target.value; renderHistList(); }
+  if (ev.target.id === 'hfrom' || ev.target.id === 'hto') { S.hist[ev.target.id === 'hfrom' ? 'from' : 'to'] = ev.target.value; renderHistList(); }
+});
+document.addEventListener('change', ev => {
+  const k = ev.target.dataset && ev.target.dataset.f;
+  if (k && S.form && S.view === 'form') S.form[k] = ev.target.value;
+});
+function compressImage(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const sc = Math.min(1, 1024 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => rej(new Error('画像を読み込めませんでした')); img.src = reader.result;
+    };
+    reader.onerror = () => rej(new Error('ファイルを読み込めませんでした')); reader.readAsDataURL(file);
+  });
+}
+function pickPhoto() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.onchange = async () => {
+    const file = inp.files[0]; if (!file) return;
+    try {
+      const dataUrl = await compressImage(file);
+      const f = S.form;
+      if (f.mode === 'new') { f.photo = dataUrl; render(); return; }
+      const [pfx, base64] = dataUrl.split(',');
+      const r = await blocking('写真を送っています…', () => call('upload_item_image', { itemId: f.itemId, base64, mimeType: (pfx.match(/data:(.*?);/) || [])[1] || 'image/jpeg', fileName: 'item_' + f.itemId + '.jpg' }));
+      if (r) { f.photo = dataUrl; const it = itemById(f.itemId); if (it) it.imageUrl = r.imageUrl; toast('写真を登録しました'); render(); }
+    } catch (e) { toast(e.message); }
+  };
+  inp.click();
+}
+async function formSave() {
+  const f = S.form, isNew = f.mode === 'new';
+  const n = k => String(f[k] ?? '').trim();
+  if (!n('itemName')) { toast('物品名を入力してください'); return; }
+  if (n('reorderPoint') === '' || isNaN(Number(n('reorderPoint')))) { toast('発注点を数字で入力してください'); return; }
+  if (isNew && (n('stock') === '' || isNaN(Number(n('stock'))))) { toast('今ある数を数字で入力してください'); return; }
+  const p = { itemName: n('itemName'), model: n('model'), useFor: n('useFor'), reorderPoint: n('reorderPoint'), parLevel: n('parLevel'),
+    orderUnitName: n('orderUnitName'), unitsPerPkg: n('unitsPerPkg') || 1, minOrderUnits: n('minOrderUnits') || 1 };
+  if (isNew || isAdmin()) p.supplierEmail = n('supplierEmail');
+  if (isAdmin()) p.price = n('price');
+  let r;
+  if (isNew) {
+    Object.assign(p, { stock: n('stock'), imageUrl: f.photo || '' });
+    r = await blocking('登録しています…', () => call('item_register', p));
+  } else {
+    Object.assign(p, { itemId: f.itemId, originalName: itemById(f.itemId) ? itemById(f.itemId).itemName : '' });
+    if (isAdmin()) p.orderedQuantity = n('orderedQuantity');
+    r = await blocking('保存しています…', () => call('update_item', p));
+  }
+  if (!r) return;
+  toast(isNew ? '登録しました' : '保存しました');
+  S.form = null; go(isNew ? 'home' : 'items'); loadItems(false);
+}
+
+/* ---- 発注カート（管理者） ---- */
+async function openCart() {
+  S.cart = null; go('cart');
+  try {
+    const r = await call('get_cart');
+    S.cart = (r.data || []).map(i => Object.assign({}, i, { qty: i.suggestedQty }));
+  } catch (e) { toast(e.message); S.cart = []; }
+  if (S.view === 'cart') render();
+}
+function renderCart() {
+  if (!S.cart) { app.innerHTML = `${head('発注カート')}<div class="empty-msg">読み込んでいます…</div>`; return; }
+  const groups = {};
+  S.cart.forEach(i => { const k = i.supplierName || i.supplierEmail || '発注先なし'; (groups[k] = groups[k] || []).push(i); });
+  let total = 0, sups = 0;
+  const html = Object.entries(groups).map(([name, rows]) => {
+    const gt = rows.reduce((a, i) => a + i.qty * i.price, 0);
+    total += gt; if (rows.some(i => i.qty > 0)) sups++;
+    return `<div class="gh">${esc(name)}<span class="num">${yen(gt)}</span></div><div class="list">${rows.map(i => {
+      const pk = i.unitsPerPkg > 1 ? `<small>${i.qty / i.unitsPerPkg}${esc(i.orderUnitName || '単位')}</small>` : '<small>個</small>';
+      return `<div class="crow"><div class="nm">${esc(i.itemName)}</div>
+        <div class="md num">${esc(i.model || '')} 在庫 ${i.stock}・未納 ${i.orderedQuantity}・発注点 ${i.reorderPoint}${i.parLevel !== '' ? '・上限 ' + i.parLevel : ''}</div>
+        <div class="line"><div class="step num"><button data-act="cartStep" data-id="${i.itemId}" data-d="-1" aria-label="減らす">−</button><b>${i.qty}${pk}</b><button data-act="cartStep" data-id="${i.itemId}" data-d="1" aria-label="増やす">＋</button></div>
+        <div class="price num">単価 ${yen(i.price)}<b>${yen(i.qty * i.price)}</b></div></div></div>`;
+    }).join('')}</div>`;
+  }).join('');
+  app.className = 'with-bar';
+  app.innerHTML = `${head('発注カート')}
+    ${S.cart.length ? html : '<div class="empty-msg">発注が必要な物品はありません</div>'}
+    ${S.cart.length ? `<div class="savebar"><button data-act="cartSend" ${sups ? '' : 'disabled'}>${sups}社へ発注メールを送る（${yen(total)}）<small>メールには単価と金額を記載します</small></button></div>` : ''}`;
+}
+async function cartSend() {
+  const orders = S.cart.filter(i => i.qty > 0).map(i => ({ itemId: i.itemId, itemName: i.itemName, quantity: i.qty }));
+  const sups = new Set(S.cart.filter(i => i.qty > 0).map(i => i.supplierEmail)).size;
+  if (!orders.length || !confirm(`${sups}社へ発注メールを送ります。よろしいですか？`)) return;
+  const r = await blocking('発注メールを送っています…', () => call('submit_batch_orders', { orders }));
+  if (!r) return;
+  toast(r.message || '発注しました');
+  S.orders = null; S.cart = null; go('home'); loadItems(false); loadOrders();
+}
+
+/* ---- 発注履歴 ---- */
+const PERIODS = [['week', '7日間'], ['month', '今月'], ['last', '先月'], ['all', 'すべて'], ['range', '期間指定']];
+const STATS = [['all', 'すべて'], ['open', '未納'], ['done', '入庫済'], ['cancel', 'キャンセル']];
+function renderHistory() {
+  const h = S.hist;
+  if (!S.orders) loadOrders();
+  app.innerHTML = `${head('発注履歴')}
+    <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="hq" type="search" placeholder="物品名・発注先・発注者で検索" aria-label="検索" value="${esc(h.q)}" autocomplete="off"></label>
+    <div class="seg2"><button class="${h.mode === 'day' ? 'on' : ''}" data-act="hmode" data-m="day">日別</button><button class="${h.mode === 'item' ? 'on' : ''}" data-act="hmode" data-m="item">物品別</button></div>
+    <div class="filters">${PERIODS.map(([id, l]) => `<button class="${h.period === id ? 'on' : ''}" data-act="hperiod" data-p="${id}">${l}</button>`).join('')}</div>
+    ${h.period === 'range' ? `<div class="range"><input type="date" id="hfrom" value="${h.from}" aria-label="開始日"><span>〜</span><input type="date" id="hto" value="${h.to}" aria-label="終了日"></div>` : ''}
+    <div class="filters">${STATS.map(([id, l]) => `<button class="${h.st === id ? 'on' : ''}" data-act="hstat" data-s="${id}">${l}</button>`).join('')}</div>
+    <div id="hlist"></div>
+    ${h.detail ? histDetail() : ''}`;
+  renderHistList();
+}
+function histRange() {
+  const h = S.hist, now = new Date();
+  if (h.period === 'week') { const d = new Date(); d.setDate(d.getDate() - 6); return [ymd(d), todayStr()]; }
+  if (h.period === 'month') return [todayStr().slice(0, 7) + '-01', todayStr()];
+  if (h.period === 'last') { const a = new Date(now.getFullYear(), now.getMonth() - 1, 1), b = new Date(now.getFullYear(), now.getMonth(), 0); return [ymd(a), ymd(b)]; }
+  if (h.period === 'range') return [h.from || '0000-00-00', h.to || '9999-99-99'];
+  return ['0000-00-00', '9999-99-99'];
+}
+function orderState(o) {
+  const left = Math.max(0, o.qty - (o.received || 0));
+  if (o.status === 'キャンセル済み') return { k: 'cancel', label: 'キャンセル', cls: '' };
+  if (o.status === '入庫済み') return { k: 'done', label: '入庫済', cls: 'ok' };
+  return { k: 'open', label: o.received ? `未納 ${left}（${o.received}入庫）` : `未納 ${left}`, cls: 'warn' };
+}
+function filteredOrders() {
+  const h = S.hist, [a, b] = histRange(), q = h.q.trim().toLowerCase();
+  return (S.orders || []).filter(o => {
+    if (h.period !== 'all' && (!o.date || o.date < a || o.date > b)) return false;
+    if (h.st !== 'all' && orderState(o).k !== h.st) return false;
+    if (q && !(`${o.itemName} ${o.supplier} ${o.user}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+function renderHistList() {
+  const el = $('hlist'); if (!el) return;
+  if (!S.orders) { el.innerHTML = '<div class="empty-msg">読み込んでいます…</div>'; return; }
+  const rows = filteredOrders(), byDay = S.hist.mode === 'day';
+  const total = rows.filter(o => o.status !== 'キャンセル済み').reduce((s, o) => s + (o.total || 0), 0);
+  const groups = new Map();
+  rows.forEach(o => { const k = byDay ? (o.date || '日付なし') : o.itemName; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); });
+  const all = S.orders;
+  el.innerHTML = `<div class="cnt"><span>${rows.length}件の発注</span>${isAdmin() ? `<span>合計 <b class="num">${yen(total)}</b></span>` : ''}</div>
+    ${rows.length ? [...groups].map(([k, os]) => `<div class="gh">${esc(byDay && k !== '日付なし' ? fmtDay(k) : k)}<span>${os.length}件${!byDay ? `・計${os.reduce((s, o) => s + o.qty, 0)}個` : ''}</span></div>
+      <div class="list">${os.map(o => { const st = orderState(o);
+        return `<button class="hrow" data-act="hdetail" data-i="${all.indexOf(o)}"><div class="info">
+          <div class="nm">${esc(byDay ? o.itemName : (o.date ? fmtDay(o.date) : '日付なし') + '　' + (o.supplier || ''))}</div>
+          <div class="md">${esc(byDay ? [o.supplier, o.user].filter(Boolean).join('・') : '発注 ' + o.user)}</div></div>
+          <div class="rt num"><span class="qty">${o.qty}個</span><span class="chip ${st.cls}">${esc(st.label)}</span>${isAdmin() && o.status !== 'キャンセル済み' ? `<span class="amt">${yen(o.total)}</span>` : ''}</div></button>`; }).join('')}</div>`).join('')
+      : '<div class="empty-msg">条件に合う発注はありません</div>'}`;
+}
+function histDetail() {
+  const o = S.orders[S.hist.detail.i]; if (!o) return '';
+  const st = orderState(o);
+  const canCancel = isAdmin() && st.k === 'open' && o.historyId;
+  return `<div class="scrim" data-act="hclose"></div><div class="dsheet" role="dialog" aria-label="発注の詳細"><div class="in">
+    <h3>${esc(o.itemName)}</h3>
+    <dl class="num"><dt>発注日時</dt><dd>${esc(o.ts || '不明')}</dd><dt>発注先</dt><dd>${esc(o.supplier || '－')}</dd><dt>発注者</dt><dd>${esc(o.user)}</dd>
+      <dt>数量</dt><dd>${o.qty}個（入庫 ${o.received || 0}個）</dd><dt>状態</dt><dd><span class="chip ${st.cls}">${esc(st.label)}</span></dd>
+      ${isAdmin() ? `<dt>単価</dt><dd>${yen(o.price)}</dd><dt>金額</dt><dd>${yen(o.total)}</dd>` : ''}</dl>
+    <div class="acts2">${canCancel ? `<button class="btn danger" data-act="hcancel">発注をキャンセル</button>` : '<span></span>'}<button class="btn" data-act="hclose">閉じる</button></div>
+  </div></div>`;
+}
+async function histCancel() {
+  const o = S.orders[S.hist.detail.i];
+  if (!o || !confirm(`${o.itemName}（${o.qty}個）の発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？`)) return;
+  const r = await blocking('キャンセルしています…', () => call('cancel_order', { historyId: o.historyId, mailId: o.mailId }));
+  if (!r) return;
+  toast('キャンセル済みにしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
+}
+
+/* ---- 要確認 ---- */
+const REASONS = {
+  over: [['warranty', '保証品に変更', 'pri'], ['keep', '通常入庫で正しい', '']],
+  count: [['out_missing', '出庫の記録漏れ', 'pri'], ['in_missing', '入庫の記録漏れ', ''], ['miscount', '前回の数え間違い', ''], ['other', 'その他・確認済み', '']],
+  late: [['receive', '入庫を記録', 'pri'], ['wait', '納品待ちを確認', ''], ['cancel', '発注をキャンセル', 'danger']]
+};
+function renderAlerts() {
+  if (!S.alerts) loadAlerts(false);
+  const list = S.alerts || [];
+  app.innerHTML = `${head(`要確認 ${S.alerts ? list.length + '件' : ''}`)}
+    <p class="muted" style="font-size:13px;margin:0 2px 10px">発注・入庫・出庫・棚卸しの記録が合わないものです。${isAdmin() ? '理由を選ぶと確認済みになります。' : '確認は管理者が行います。'}</p>
+    ${!S.alerts ? '<div class="empty-msg">読み込んでいます…</div>' : !list.length ? '<div class="empty-msg">確認が必要なものはありません</div>' : list.map(alertCard).join('')}`;
+}
+function alertCard(a) {
+  let kind, cls, f1l, f1, f2l, f2, note = a.note;
+  if (a.kind === 'over') { kind = '未納より多い入庫'; cls = 'alert'; f1l = `通常入庫（${a.ts} ${a.user}）`; f1 = `${a.qty}個`; f2l = '入庫前の在庫'; f2 = a.before === null ? '－' : `${a.before}個`;
+    note = `${note}。メーカー保証品ではありませんか？`; }
+  else if (a.kind === 'count') { kind = '棚卸しで不一致'; cls = 'warn'; f1l = '帳簿の在庫'; f1 = a.before === null ? '－' : `${a.before}個`; f2l = `数えた数（${a.ts} ${a.user}）`; f2 = `${a.qty}個`; }
+  else { kind = '入庫がない'; cls = 'warn'; f1l = `発注（${a.ts}${a.supplier ? ' ' + a.supplier : ''}）`; f1 = `${a.qty}個`; f2l = '経過・未着'; f2 = `${a.days}日・${a.remaining}個`;
+    note = `発注から${S.lateDays || 14}日以上、入庫の記録がありません。`; }
+  const btns = isAdmin() ? `<div class="acts2">${REASONS[a.kind].map(([act, l, c]) => `<button class="btn ${c}" data-act="resolve" data-h="${a.historyId}" data-id="${a.itemId}" data-a="${act}">${l}</button>`).join('')}</div>` : '';
+  return `<div class="acard ${cls}"><span class="chip ${cls}" style="align-self:flex-start">${kind}</span>
+    <div class="nm">${esc(a.itemName)}</div>
+    <div class="facts num"><div class="fact"><span>${esc(f1l)}</span><b>${esc(f1)}</b></div><div class="fact"><span>${esc(f2l)}</span><b>${esc(f2)}</b></div></div>
+    <div class="note">${esc(note)}</div>${btns}</div>`;
+}
+async function resolve(b) {
+  const h = Number(b.dataset.h), id = b.dataset.id, act = b.dataset.a;
+  if (act === 'receive') { if (!itemById(id)) { toast('物品が見つかりません。一覧を更新してください'); return; } openStock(id, 'in'); return; }
+  if (act === 'cancel' && !confirm('この発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？')) return;
+  const r = await blocking('記録しています…', () => call('resolve_alert', { historyId: h, itemId: id, action: act }));
+  if (!r) return;
+  S.alerts = (S.alerts || []).filter(a => a.historyId !== h);
+  toast('確認済みにしました'); render();
+  if (act === 'cancel' || act === 'warranty') { loadItems(false); S.orders = null; }
+}
+
+/* ---- 月次レポート（管理者） ---- */
+function renderReport() {
+  const m = S.reportMonth || todayStr().slice(0, 7);
+  app.innerHTML = `${head('月次レポート')}
+    <div class="fgrp"><p class="muted" style="margin:0;font-size:14px">指定した月の入庫・出庫・発注・棚卸しの記録と金額を、CSVファイルでダウンロードします。</p>
+      <div class="field"><label for="rm">対象の月</label><input type="month" id="rm" value="${m}"></div>
+      <button class="btn pri" data-act="report">CSVをダウンロード</button></div>`;
+}
+async function downloadReport() {
+  const m = $('rm').value; if (!m) { toast('月を選んでください'); return; }
+  S.reportMonth = m;
+  const r = await blocking('集計しています…', () => call('get_monthly_report', { targetMonth: m }));
+  if (!r) return;
+  const rows = r.data || [];
+  if (!rows.length) { toast('この月の記録はありません'); return; }
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [['日時', '物品ID', '物品名', '種別', '数量', '単価', '金額', '担当者', '部署'].join(',')]
+    .concat(rows.map(x => [q(x.date), q(x.itemId), q(x.itemName), q(x.type), x.quantity, x.price, x.totalAmount, q(x.user), q(x.department)].join(',')));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `在庫管理_月次レポート_${m}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`${rows.length}件をダウンロードしました`);
+}
+
+/* =================== 操作 =================== */
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-act]');
+  if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  if (act === 'theme') { theme = { auto: 'light', light: 'dark', dark: 'auto' }[theme]; store.set('theme', theme); applyTheme(); toast(THEMES[theme][1]); }
+  else if (act === 'logout') logout(false);
+  else if (act === 'go') { if (b.dataset.v === 'home') { S.count = null; S.stock = null; } go(b.dataset.v); }
+  else if (act === 'items' || act === 'filter') { S.itemsFilter = b.dataset.f || 'all'; if (act === 'items') { S.q = ''; go('items'); } else render(); }
+  else if (act === 'stock') openStock(b.dataset.id, b.dataset.t);
+  else if (act === 'kind') { S.stock.kind = b.dataset.k; render(); }
+  else if (act === 'stockGo') stockGo();
+  else if (act === 'count') openCount();
+  else if (act === 'countSame') { const it = countItems()[S.count.index]; KP.value = String(it.stock); KP.onChange(KP.value); }
+  else if (act === 'countGo') countGo();
+  else if (act === 'countPrev') { S.count.index = Math.max(0, S.count.index - 1); S.count.value = ''; render(); }
+  else if (act === 'edit') openForm(b.dataset.id);
+  else if (act === 'register') openForm(null);
+  else if (act === 'photo') pickPhoto();
+  else if (act === 'formSave') formSave();
+  else if (act === 'cart') openCart();
+  else if (act === 'cartStep') {
+    const i = S.cart.find(x => x.itemId === b.dataset.id);
+    i.qty = Math.max(0, i.qty + Number(b.dataset.d) * (i.orderStep || 1)); render();
+  }
+  else if (act === 'cartSend') cartSend();
+  else if (act === 'hmode') { S.hist.mode = b.dataset.m; render(); }
+  else if (act === 'hperiod') { S.hist.period = b.dataset.p; render(); }
+  else if (act === 'hstat') { S.hist.st = b.dataset.s; render(); }
+  else if (act === 'hdetail') { S.hist.detail = { i: Number(b.dataset.i) }; render(); }
+  else if (act === 'hclose') { S.hist.detail = null; render(); }
+  else if (act === 'hcancel') histCancel();
+  else if (act === 'resolve') resolve(b);
+  else if (act === 'report') downloadReport();
+});
+
+/* 画面に戻ってきたら最新を取得・未送信を再送 */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !S.user) return;
+  const s = store.get('session', null);
+  if (!s || s.day !== todayStr()) { logout(true); return; }   // ログインはその日のうちだけ有効
+  kick(0);
+  if (['home', 'items'].includes(S.view) && !OB.ops.length) { loadItems(true); loadAlerts(true); }
+});
+window.addEventListener('online', () => kick(0));
+window.addEventListener('offline', updateSync);
+
+/* 起動：その日のうちならログインを引き継ぎ、端末のデータで即表示 → 裏で最新を取得 */
+(function start() {
+  const s = store.get('session', null);
+  if (s && s.day === todayStr() && s.user) {
+    S.user = s.user;
+    S.items = store.get('items_' + S.user.role, []);
+    OB.ops.forEach(o => o.local && applyLocal(o.local));
+    go('home'); loadItems(true); loadAlerts(true); if (isAdmin()) loadOrders(); kick(0);
+  } else {
+    store.del('session'); go('login');
+  }
+})();
 </script>
 </body>
 </html>
