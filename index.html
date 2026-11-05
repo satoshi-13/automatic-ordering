@@ -255,7 +255,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.1';
+const VERSION = 'v7.0';
 
 const app = document.getElementById('app');
 const store = {
@@ -913,12 +913,10 @@ function histDetail() {
 }
 async function histCancel() {
   const o = S.orders[S.hist.detail.i];
-  if (!o) return;
-  const left = Math.max(0, o.qty - (o.received || 0));
-  if (!confirm(`${o.itemName}（${o.received ? '残り' : ''}${left}個）の発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？`)) return;
+  if (!o || !confirm(`${o.itemName}（${o.qty}個）の発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？`)) return;
   const r = await blocking('キャンセルしています…', () => call('cancel_order', { historyId: o.historyId, mailId: o.mailId }));
   if (!r) return;
-  toast(r.message || 'キャンセルしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
+  toast('キャンセル済みにしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
 }
 
 /* ---- 要確認 ---- */
@@ -950,7 +948,7 @@ function alertCard(a) {
 async function resolve(b) {
   const h = Number(b.dataset.h), id = b.dataset.id, act = b.dataset.a;
   if (act === 'receive') { if (!itemById(id)) { toast('物品が見つかりません。一覧を更新してください'); return; } openStock(id, 'in'); return; }
-  if (act === 'cancel' && !confirm('この発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？')) return;
+  if (act === 'cancel' && !confirm('この発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？')) return;
   const r = await blocking('記録しています…', () => call('resolve_alert', { historyId: h, itemId: id, action: act }));
   if (!r) return;
   S.alerts = (S.alerts || []).filter(a => a.historyId !== h);
