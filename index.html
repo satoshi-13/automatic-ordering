@@ -255,7 +255,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.0';
+const VERSION = 'v7.2';
 
 const app = document.getElementById('app');
 const store = {
@@ -417,16 +417,17 @@ function toast(msg) {
  *  ・押すたびに画面全体は描き直さず、数字と案内の部分だけ書き換える
  * ======================================================= */
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
-const KP = { value: '', max: 4, onChange: null };
+const KP = { value: '', max: 4, onChange: null, keepZero: false };
 function keypadHTML() {
   return `<div class="keypad">${KEYS.map(k => `<button type="button" data-key="${k}" aria-label="${k === '⌫' ? '1文字消す' : k === 'C' ? 'クリア' : k}">${k}</button>`).join('')}</div>`;
 }
-function setKP(value, max, onChange) { KP.value = value; KP.max = max; KP.onChange = onChange; onChange(KP.value); }
+// keepZero：ユーザー番号のように先頭の0も文字として残す（数量入力では「0→5」を「5」にする）
+function setKP(value, max, onChange, keepZero) { KP.value = value; KP.max = max; KP.onChange = onChange; KP.keepZero = !!keepZero; onChange(KP.value); }
 function pressKey(k) {
   let v = KP.value;
   if (k === '⌫') v = v.slice(0, -1);
   else if (k === 'C') v = '';
-  else if (v.length < KP.max) v = (v === '0' ? '' : v) + k;
+  else if (v.length < KP.max) v = (v === '0' && !KP.keepZero ? '' : v) + k;
   KP.value = v;
   if (KP.onChange) KP.onChange(v);
 }
@@ -477,7 +478,7 @@ function renderLogin() {
     $('lh').textContent = v.length < 5 ? `あと${5 - v.length}桁` : '確認しています…';
     $('lh').className = 'hint';
     if (v.length === 5) doLogin(v);
-  });
+  }, true);
 }
 async function doLogin(id) {
   try {
@@ -913,10 +914,12 @@ function histDetail() {
 }
 async function histCancel() {
   const o = S.orders[S.hist.detail.i];
-  if (!o || !confirm(`${o.itemName}（${o.qty}個）の発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？`)) return;
+  if (!o) return;
+  const left = Math.max(0, o.qty - (o.received || 0));
+  if (!confirm(`${o.itemName}（${o.received ? '残り' : ''}${left}個）の発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？`)) return;
   const r = await blocking('キャンセルしています…', () => call('cancel_order', { historyId: o.historyId, mailId: o.mailId }));
   if (!r) return;
-  toast('キャンセル済みにしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
+  toast(r.message || 'キャンセルしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
 }
 
 /* ---- 要確認 ---- */
@@ -948,7 +951,7 @@ function alertCard(a) {
 async function resolve(b) {
   const h = Number(b.dataset.h), id = b.dataset.id, act = b.dataset.a;
   if (act === 'receive') { if (!itemById(id)) { toast('物品が見つかりません。一覧を更新してください'); return; } openStock(id, 'in'); return; }
-  if (act === 'cancel' && !confirm('この発注をキャンセル済みにします。業者への連絡は別に行ってください。よろしいですか？')) return;
+  if (act === 'cancel' && !confirm('この発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？')) return;
   const r = await blocking('記録しています…', () => call('resolve_alert', { historyId: h, itemId: id, action: act }));
   if (!r) return;
   S.alerts = (S.alerts || []).filter(a => a.historyId !== h);
