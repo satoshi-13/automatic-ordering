@@ -149,6 +149,34 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 .nav{display:flex;align-items:center;gap:8px}
 .nav .sp{flex:1;text-align:center;font-weight:700}
 
+/* 棚卸し（写真を大きく、上下ボタンで数を合わせる） */
+.cphoto{width:100%;aspect-ratio:4/3;max-height:40vh;border-radius:14px;background:var(--empty);color:var(--muted);font-size:14px;
+  display:grid;place-items:center;overflow:hidden;margin-bottom:8px}
+.cphoto img{width:100%;height:100%;object-fit:contain;display:block}
+.cinfo{margin:0 2px 8px}
+.cinfo .nm{font-size:19px;font-weight:700;line-height:1.3}
+.cinfo .md{font-size:13px;color:var(--muted)}
+.cinfo .prev{font-size:14px;margin-top:2px}
+.cinfo .prev b{font-size:16px}
+.cstep{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid var(--accent);border-radius:16px;padding:8px;
+  box-shadow:0 0 0 3px var(--accent-soft)}
+.cstep.warn{background:var(--warn-bg);border-color:var(--warn-line);box-shadow:none}
+.cstep .sb{width:76px;height:76px;flex:none;border-radius:14px;background:var(--key);font-size:38px;font-weight:700;color:var(--accent);line-height:1;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:transform .06s,background .06s}
+.cstep .sb:active,.cstep .sb.down{background:var(--line);transform:scale(.94)}
+.cstep .cv{flex:1;min-width:0;text-align:center;padding:2px 0;border-radius:12px}
+.cstep .cv b{display:block;font-size:46px;line-height:1.05;font-weight:700}
+.cstep .cv small{display:block;font-size:13px;color:var(--muted);font-weight:600;min-height:18px}
+.cstep.warn .cv small{color:var(--warn)}
+.chint{font-size:13px;margin:8px 2px 0;color:var(--muted);min-height:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chint.warn{color:var(--warn);font-weight:600}
+.chint button{color:var(--accent);font-weight:700;font-size:14px;padding:4px 0;text-decoration:underline}
+.cbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
+  padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px)}
+.cbar .in{max-width:536px;margin:0 auto;display:grid;grid-template-columns:1fr 2.2fr;gap:8px}
+.cbar button{height:56px;border-radius:14px;font-size:16px;font-weight:700;background:var(--key)}
+.cbar .go{background:var(--accent);color:var(--on-accent);font-size:17px}
+
 /* テンキー（下から出る） */
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:7;background:var(--surface);border-top:1px solid var(--line);
   box-shadow:0 -8px 24px rgba(10,30,40,.12);padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px)}
@@ -255,7 +283,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.2';
+const VERSION = 'v7.3';
 
 const app = document.getElementById('app');
 const store = {
@@ -631,14 +659,19 @@ function stockGo() {
   const back = st.back; S.stock = null; go(back === 'alerts' ? 'alerts' : 'items');
 }
 
-/* ---- 棚卸し ---- */
+/* =========================================================
+ * 棚卸し
+ *  ・写真を大きく表示し、数は［−］［＋］で合わせる（最初から前回の数＝帳簿在庫が入っている）
+ *  ・数が合っていれば「確定して次へ」を押すだけ。押し続けると連続で増減
+ *  ・大きく違うときは、真ん中の数字を押すとテンキー（電話式）で入力できる
+ * ======================================================= */
 async function openCount() {
   const prog = store.get('countProg', null);
-  S.count = { index: prog && prog.day === todayStr() ? prog.index : 0, value: '', loading: true };
+  S.count = { index: prog && prog.day === todayStr() ? prog.index : 0, value: '', kp: false, loading: true };
   go('count');
   try {
     const r = await call('get_inventory_progress');
-    if (S.count && S.count.loading) { S.count.index = Math.max(S.count.index, Number(r.currentIndex) || 0); }
+    if (S.count && S.count.loading) { S.count.index = Math.max(S.count.index, Number(r.currentIndex) || 0); S.count.value = ''; }
   } catch (_) {}
   if (S.count) { S.count.loading = false; if (S.view === 'count') render(); }
 }
@@ -648,47 +681,98 @@ function driveId(u) {
   const m = String(u).match(/\/d\/([A-Za-z0-9_-]+)/) || String(u).match(/[?&]id=([A-Za-z0-9_-]+)/);
   return m ? m[1] : null;
 }
-const imgURL = (u, size) => { const id = driveId(u); return id ? `https://lh3.googleusercontent.com/d/${id}=s${size}-c` : ''; };
+// crop=false で切り抜かずに縮小（棚卸しの大きな写真用）
+const imgURL = (u, size, crop = true) => { const id = driveId(u); return id ? `https://lh3.googleusercontent.com/d/${id}=s${size}${crop ? '-c' : ''}` : ''; };
+function curCountItem() { const list = countItems(); return S.count ? list[S.count.index] : null; }
 function renderCount() {
   const list = countItems(), c = S.count;
   if (!list.length) { app.innerHTML = `${head('棚卸し')}<div class="empty-msg">${S.itemsLoaded ? '物品がありません' : '読み込んでいます…'}</div>`; return; }
   if (c.index >= list.length) c.index = 0;
   const it = list[c.index];
-  const img = imgURL(it.imageUrl, 240);
+  if (c.value === '') c.value = String(it.stock);             // 最初は前回の数（帳簿在庫）
+  const img = imgURL(it.imageUrl, 800, false);
   const next = list[c.index + 1];
-  if (next && next.imageUrl) { const p = new Image(); p.src = imgURL(next.imageUrl, 240); }
-  app.className = 'with-sheet';
+  if (next && next.imageUrl) { const p = new Image(); p.src = imgURL(next.imageUrl, 800, false); }
+  const upd = it.updatedAt ? `${String(it.updatedAt).slice(5, 10)} 更新` : '';
+  app.className = c.kp ? 'with-sheet' : 'with-bar';
   app.innerHTML = `
-    <div class="nav"><button class="back" data-act="countPrev" ${c.index ? '' : 'disabled'}>‹ 前へ</button>
-      <span class="sp num">棚卸し ${c.index + 1} / ${list.length}</span><button class="back" data-act="go" data-v="home">中断</button></div>
+    <div class="nav"><button class="back" data-act="go" data-v="home">‹ 中断</button>
+      <span class="sp num">棚卸し ${c.index + 1} / ${list.length}</span><span style="width:52px"></span></div>
     <div class="progress" style="margin-bottom:8px"><i style="width:${(c.index + 1) / list.length * 100}%"></i></div>
-    <div class="card">
-      <div class="ph">${img ? `<img src="${img}" alt="${esc(it.itemName)}の写真">` : '写真なし'}</div>
-      <div><div class="nm">${esc(it.itemName)}</div><div class="md">${esc([it.model, it.useFor].filter(Boolean).join('・'))}</div><div class="md num">発注点 ${it.reorderPoint}${it.orderedQuantity ? `・未納 ${it.orderedQuantity}` : ''}</div></div>
+    ${c.kp ? '' : `<div class="cphoto">${img ? `<img src="${img}" alt="${esc(it.itemName)}の写真">` : '写真なし'}</div>`}
+    <div class="cinfo">
+      <div class="nm">${esc(it.itemName)}</div>
+      <div class="md">${esc([it.model, it.useFor].filter(Boolean).join('・'))}${it.reorderPoint ? `　発注点 ${it.reorderPoint}` : ''}${it.orderedQuantity ? `・未納 ${it.orderedQuantity}` : ''}</div>
+      <div class="prev num">前回の数（帳簿） <b>${it.stock}</b>個 <span class="muted">${esc(upd)}</span></div>
     </div>
-    <div class="tiles num">
-      <div class="tile"><span class="lab">帳簿の在庫</span><span class="tv">${it.stock}<small>個</small></span><span class="tsub">${esc((it.updatedAt || '').slice(5, 10).replace('/', '/'))}${it.updatedAt ? ' 更新' : ''}</span></div>
-      <div class="tile act" id="ctile"><span class="lab">数えた数</span><span class="tv"><span id="kv">－</span><small>個</small></span><span class="tsub" id="cdiff"></span></div>
+    <div class="cstep num" id="cstep">
+      <button class="sb" data-step="-1" aria-label="1つ減らす">−</button>
+      <button class="cv" data-act="countKp" aria-label="数字で入力する"><b id="kv"></b><small id="cdiff"></small></button>
+      <button class="sb" data-step="1" aria-label="1つ増やす">＋</button>
     </div>
-    <div class="sheet"><div class="sheet-in">
-      <div class="sheet-head"><b>数えた数</b><button data-act="countSame">帳簿と同じ</button><button class="go" id="kgo" data-act="countGo" disabled>確定して次へ</button></div>
-      <div class="hint" id="kh"></div>${keypadHTML()}</div></div>`;
-  setKP(c.value, 4, v => {
-    c.value = v;
-    const has = v !== '', n = Number(v || 0), d = n - it.stock;
-    $('kv').textContent = has ? String(n) : '－';
-    let hint = '棚にある数を入力してください', cls = 'hint', diff = '', tile = 'tile act';
-    if (has && d === 0) { hint = '帳簿と一致しています'; cls = 'hint ok'; diff = '一致'; }
-    else if (has) { hint = `帳簿より ${d > 0 ? '+' : ''}${d}個。確定すると「要確認」に入ります（入庫・出庫の記録漏れの可能性）`; cls = 'hint warn'; diff = `帳簿より ${d > 0 ? '+' : ''}${d}`; tile = 'tile act warn'; }
-    $('kh').textContent = hint; $('kh').className = cls;
-    $('cdiff').textContent = diff; $('ctile').className = tile;
-    $('kgo').disabled = !has;
-  });
+    <div class="chint" id="ch"></div>
+    ${c.kp
+      ? `<div class="sheet"><div class="sheet-in">
+          <div class="sheet-head"><b>数を入力</b><button data-act="countKpCancel">やめる</button><button class="go" data-act="countKpDone">決定</button></div>
+          ${keypadHTML()}</div></div>`
+      : `<div class="cbar"><div class="in">
+          <button data-act="countPrev" ${c.index ? '' : 'disabled'}>‹ 前へ</button>
+          <button class="go" data-act="countGo">確定して次へ</button></div></div>`}`;
+  if (c.kp) {
+    setKP('', 4, v => { c.kpv = v; updateCountUI(); });
+  } else updateCountUI();
 }
+/* 数字・差分・案内だけ書き換える（押すたびに画面全体は描き直さない） */
+function updateCountUI() {
+  const c = S.count, it = curCountItem();
+  if (!c || !it || !$('kv')) return;
+  const typing = c.kp && c.kpv !== undefined && c.kpv !== '';
+  const n = typing ? Number(c.kpv) : Number(c.value);
+  const d = n - it.stock;
+  $('kv').textContent = c.kp && !typing ? '－' : String(n);
+  $('cdiff').textContent = c.kp && !typing ? '数を入力してください' : d === 0 ? '前回と同じ' : `前回より ${d > 0 ? '+' : ''}${d}`;
+  $('cstep').className = 'cstep num' + (d !== 0 && (!c.kp || typing) ? ' warn' : '');
+  const h = $('ch');
+  if (c.kp) { h.className = 'chint'; h.textContent = '数字を入れて「決定」を押してください'; }
+  else if (d === 0) { h.className = 'chint'; h.textContent = '数が合っていれば「確定して次へ」を押してください'; }
+  else {
+    h.className = 'chint warn';
+    h.innerHTML = `確定すると「要確認」に入ります <button data-act="countSame">前回の数に戻す</button>`;
+  }
+}
+/* ［−］［＋］：押した瞬間に1つ変え、押し続けると連続で変える */
+let stepWait = null, stepRepeat = null, lastStep = 0, stepBtn = null;
+function stepCount(d) {
+  const c = S.count; if (S.view !== 'count' || !c || c.kp) return;
+  c.value = String(Math.max(0, Math.min(9999, Number(c.value || 0) + d)));
+  updateCountUI();
+}
+function stopStep() {
+  clearTimeout(stepWait); clearInterval(stepRepeat); stepWait = stepRepeat = null;
+  if (stepBtn) { stepBtn.classList.remove('down'); stepBtn = null; }
+}
+document.addEventListener('pointerdown', ev => {
+  const b = ev.target.closest('[data-step]');
+  if (!b) return;
+  ev.preventDefault();
+  stopStep();
+  lastStep = Date.now(); stepBtn = b; b.classList.add('down');
+  const d = Number(b.dataset.step);
+  stepCount(d);
+  stepWait = setTimeout(() => { stepRepeat = setInterval(() => stepCount(d), 90); }, 450);
+});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopStep));
+window.addEventListener('blur', stopStep);
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-step]');
+  if (!b) return;
+  if (Date.now() - lastStep < 700) return;   // タッチで処理済み。キーボード操作のときだけここで受ける
+  stepCount(Number(b.dataset.step));
+}, true);
 function countGo() {
   const list = countItems(), c = S.count, it = list[c.index];
-  if (c.value === '') return;
-  const n = Number(c.value), next = c.index + 1 >= list.length ? 0 : c.index + 1;
+  if (!it) return;
+  const n = Math.max(0, Math.floor(Number(c.value === '' ? it.stock : c.value))), next = c.index + 1 >= list.length ? 0 : c.index + 1;
   if (n !== it.stock) {
     enqueue('stock_update', { itemId: it.itemId, itemName: it.itemName, type: '棚卸修正', quantity: n, nextInventoryIndex: next },
       { itemId: it.itemId, type: '棚卸修正', quantity: n });
@@ -697,7 +781,7 @@ function countGo() {
   }
   store.set('countProg', { day: todayStr(), index: next });
   if (next === 0) { toast('すべての物品の棚卸しが終わりました'); S.count = null; go('home'); return; }
-  c.index = next; c.value = ''; render(); window.scrollTo(0, 0);
+  c.index = next; c.value = ''; c.kp = false; render(); window.scrollTo(0, 0);
 }
 
 /* ---- 物品の編集・新規登録 ---- */
@@ -996,9 +1080,12 @@ document.addEventListener('click', ev => {
   else if (act === 'kind') { S.stock.kind = b.dataset.k; render(); }
   else if (act === 'stockGo') stockGo();
   else if (act === 'count') openCount();
-  else if (act === 'countSame') { const it = countItems()[S.count.index]; KP.value = String(it.stock); KP.onChange(KP.value); }
+  else if (act === 'countSame') { const it = curCountItem(); if (it) { S.count.value = String(it.stock); updateCountUI(); } }
+  else if (act === 'countKp') { S.count.kp = true; S.count.kpv = ''; render(); }
+  else if (act === 'countKpCancel') { S.count.kp = false; render(); }
+  else if (act === 'countKpDone') { if (S.count.kpv !== undefined && S.count.kpv !== '') S.count.value = String(Number(S.count.kpv)); S.count.kp = false; render(); }
   else if (act === 'countGo') countGo();
-  else if (act === 'countPrev') { S.count.index = Math.max(0, S.count.index - 1); S.count.value = ''; render(); }
+  else if (act === 'countPrev') { S.count.index = Math.max(0, S.count.index - 1); S.count.value = ''; S.count.kp = false; render(); }
   else if (act === 'edit') openForm(b.dataset.id);
   else if (act === 'register') openForm(null);
   else if (act === 'photo') pickPhoto();
