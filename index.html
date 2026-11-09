@@ -152,7 +152,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 /* 棚卸し（写真を大きく、上下ボタンで数を合わせる） */
 .cphoto{width:100%;aspect-ratio:4/3;max-height:40vh;border-radius:14px;background:var(--empty);color:var(--muted);font-size:14px;
   display:grid;place-items:center;overflow:hidden;margin-bottom:8px}
-.cphoto img{width:100%;height:100%;object-fit:contain;display:block}
+.cphoto img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}   /* 枠全体に表示（はみ出した端は切れる） */
 .cinfo{margin:0 2px 8px}
 .cinfo .nm{font-size:19px;font-weight:700;line-height:1.3}
 .cinfo .md{font-size:13px;color:var(--muted)}
@@ -283,7 +283,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.3';
+const VERSION = 'v7.4';
 
 const app = document.getElementById('app');
 const store = {
