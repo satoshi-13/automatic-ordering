@@ -289,7 +289,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.6';
+const VERSION = 'v7.7';
 
 const app = document.getElementById('app');
 const store = {
@@ -810,8 +810,33 @@ async function loadSuppliers() {
 function openForm(id) {
   const it = id ? itemById(id) : null;
   S.form = it ? Object.assign({ mode: 'edit', photo: '' }, it) : { mode: 'new', itemName: '', model: '', useFor: '', stock: '', reorderPoint: '', parLevel: '', orderUnitName: '', unitsPerPkg: 1, minOrderUnits: 1, price: '', supplierEmail: '', photo: '' };
+  // 単価は「バラ1個」か「1単位（袋・箱など）」のどちらで入力するか選べる。シートにはバラ1個の単価で保存する
+  const per = Math.max(1, Number(S.form.unitsPerPkg) || 1), pr = Number(S.form.price);
+  S.form.unitPrice = S.form.price === '' || !isFinite(pr) ? '' : String(round2(pr * per));
+  S.form.priceMode = per > 1 && S.form.price !== '' && !Number.isInteger(pr) && Number.isInteger(round2(pr * per)) ? 'unit' : 'piece';
   loadSuppliers(); go('form');
 }
+const round2 = x => Math.round(Number(Number(x) + 'e2')) / 100;
+const unitLabel = f => `1${f.orderUnitName || '単位'}（${Math.max(1, Number(f.unitsPerPkg) || 1)}個入）`;
+function priceFieldHTML() {
+  const f = S.form, unit = f.priceMode === 'unit', k = unit ? 'unitPrice' : 'price';
+  return `<div class="field"><label for="f-${k}">単価（円）</label>
+    <div class="seg2" style="margin:0 0 6px"><button type="button" class="${unit ? '' : 'on'}" data-act="pmode" data-m="piece">バラ1個の単価</button>
+      <button type="button" class="${unit ? 'on' : ''}" data-act="pmode" data-m="unit">${esc(unitLabel(f))}の単価</button></div>
+    <input id="f-${k}" data-f="${k}" type="text" inputmode="decimal" value="${esc(f[k] ?? '')}" placeholder="${unit ? '例：5000' : '例：500'}">
+    <p class="fnote" id="pricehint">${esc(priceHint())}</p></div>`;
+}
+/* 入力していない側の単価を計算して表示（例：1箱（10個入）の単価 5,000円 → バラ1個 500円） */
+function priceHint() {
+  const f = S.form, per = Math.max(1, Number(f.unitsPerPkg) || 1);
+  if (f.priceMode === 'unit') {
+    const v = Number(f.unitPrice);
+    return f.unitPrice === '' || !isFinite(v) ? `${unitLabel(f)}あたりの金額を入れてください` : `バラ1個あたり ${yen2(v / per)}（シートにはこの金額で保存します）`;
+  }
+  const v = Number(f.price);
+  return f.price === '' || !isFinite(v) ? 'バラ1個あたりの金額を入れてください' : per > 1 ? `${unitLabel(f)}あたり ${yen2(v * per)}` : '';
+}
+const yen2 = n => '¥' + (Math.round(n * 100) / 100).toLocaleString('ja-JP', { maximumFractionDigits: 2 });
 function renderForm() {
   const f = S.form, isNew = f.mode === 'new', adm = isAdmin();
   const img = f.photo || imgURL(f.imageUrl, 240);
@@ -836,13 +861,25 @@ function renderForm() {
         ${inp('minOrderUnits', '最低いくつずつ注文するか（単位）', 'num')}
         ${isNew || adm ? `<div class="field"><label for="f-supplierEmail">発注先</label><select id="f-supplierEmail" data-f="supplierEmail">
           <option value="">選んでください</option>${sups.map(s => `<option ${s === f.supplierEmail ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>` : ''}
-        ${adm ? inp('price', 'バラ1個の単価（円）', 'num') : `<p class="fnote">単価は管理者が設定します。</p>`}</div>
+        ${adm ? priceFieldHTML() : `<p class="fnote">単価は管理者が設定します。</p>`}</div>
     </div>
     <div class="savebar"><button data-act="formSave">${isNew ? '登録する' : '保存する'}</button></div>`;
 }
 document.addEventListener('input', ev => {
   const k = ev.target.dataset && ev.target.dataset.f;
-  if (k && S.form && S.view === 'form') S.form[k] = ev.target.value;
+  if (k && S.form && S.view === 'form') {
+    S.form[k] = ev.target.value;
+    // 単価・入数が変わったら、もう一方の単価をそろえて案内を書き換える
+    if (['price', 'unitPrice', 'unitsPerPkg', 'orderUnitName'].includes(k)) {
+      const f = S.form, per = Math.max(1, Number(f.unitsPerPkg) || 1);
+      if (k === 'unitPrice') f.price = f.unitPrice === '' ? '' : String(Number(f.unitPrice) / per);
+      else if (k === 'price') f.unitPrice = f.price === '' ? '' : String(round2(Number(f.price) * per));
+      else if (f.priceMode === 'unit' && f.unitPrice !== '') f.price = String(Number(f.unitPrice) / per);
+      else if (f.price !== '') f.unitPrice = String(round2(Number(f.price) * per));
+      const h = $('pricehint'); if (h) h.textContent = priceHint();
+      const b = document.querySelector('[data-act="pmode"][data-m="unit"]'); if (b) b.textContent = unitLabel(f) + 'の単価';
+    }
+  }
   if (ev.target.id === 'q') { S.q = ev.target.value; renderItemList(); }
   if (ev.target.id === 'hq') { S.hist.q = ev.target.value; renderHistList(); }
   if (ev.target.id === 'hfrom' || ev.target.id === 'hto') { S.hist[ev.target.id === 'hfrom' ? 'from' : 'to'] = ev.target.value; renderHistList(); }
@@ -890,7 +927,13 @@ async function formSave() {
   const p = { itemName: n('itemName'), model: n('model'), useFor: n('useFor'), reorderPoint: n('reorderPoint'), parLevel: n('parLevel'),
     orderUnitName: n('orderUnitName'), unitsPerPkg: n('unitsPerPkg') || 1, minOrderUnits: n('minOrderUnits') || 1 };
   if (isNew || isAdmin()) p.supplierEmail = n('supplierEmail');
-  if (isAdmin()) p.price = n('price');
+  if (isAdmin()) {
+    // シートには「バラ1個の単価」で保存する（1単位の単価で入力したときは入数で割る）
+    const per = Math.max(1, Number(f.unitsPerPkg) || 1);
+    const src = f.priceMode === 'unit' ? n('unitPrice') : n('price');
+    if (src !== '' && (isNaN(Number(src)) || Number(src) < 0)) { toast('単価を数字で入力してください'); return; }
+    p.price = src === '' ? '' : String(f.priceMode === 'unit' ? Math.round(Number(src) / per * 10000) / 10000 : Number(src));
+  }
   let r;
   if (isNew) {
     Object.assign(p, { stock: n('stock'), imageUrl: f.photo || '' });
@@ -1108,6 +1151,7 @@ document.addEventListener('click', ev => {
   else if (act === 'register') openForm(null);
   else if (act === 'photo') pickPhoto();
   else if (act === 'formSave') formSave();
+  else if (act === 'pmode') { S.form.priceMode = b.dataset.m; render(); const el = $(S.form.priceMode === 'unit' ? 'f-unitPrice' : 'f-price'); if (el) el.focus(); }
   else if (act === 'cart') openCart();
   else if (act === 'cartStep') {
     const i = S.cart.find(x => x.itemId === b.dataset.id);
