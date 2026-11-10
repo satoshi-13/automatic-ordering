@@ -289,7 +289,7 @@ h2.sec{font-size:14px;margin:16px 2px 6px;color:var(--muted);font-weight:600}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt7sAKo4d1H72FA0fqGgrdoYOQnU2OaYLis18k1l1ZIw4HsYuhGhdjqipc6_5W-uHr/exec';
-const VERSION = 'v7.7';
+const VERSION = 'v7.8';
 
 const app = document.getElementById('app');
 const store = {
@@ -606,6 +606,10 @@ function renderItemList() {
     <div class="list">${rows.length ? rows.map(itemRow).join('') : '<div class="empty-msg">条件に合う物品がありません</div>'}</div>`;
 }
 const NOPHOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8 8"/></svg>';
+/* 単価の表示：1単位で登録した物品は「¥1,000/箱」、バラで登録した物品は「¥500」 */
+const priceText = i => i.priceBasis === '単位' ? `${yen(i.unitPrice)}/${i.orderUnitName || '単位'}` : yen(i.price);
+/* 個数 qty の金額（1単位で登録した物品は「1単位の金額 × 単位数」で計算し、端数を出さない） */
+const amountOf = (i, qty) => i.priceBasis === '単位' ? Math.round(i.unitPrice * qty / Math.max(1, i.unitsPerPkg || 1) * 100) / 100 : i.price * qty;
 function itemRow(i) {
   const lvl = i.stock === 0 ? 'alert' : i.stock < i.reorderPoint ? 'warn' : '';
   const chip = i.orderedQuantity > 0 ? `<span class="chip ${lvl}">未納 ${i.orderedQuantity}</span>` : needOrder(i) ? `<span class="chip ${lvl || 'warn'}">要発注</span>` : '';
@@ -614,7 +618,7 @@ function itemRow(i) {
     <button class="info" data-act="edit" data-id="${i.itemId}">
       <span class="thumb">${i.imageUrl ? `<img src="${imgURL(i.imageUrl, 160)}" alt="" loading="lazy">` : NOPHOTO}</span>
       <span class="tx"><div class="nm">${esc(i.itemName)}</div>
-      <div class="md"><span>${esc(sub)}</span>${chip}${isAdmin() ? `<span>${yen(i.price)}</span>` : ''}</div></span></button>
+      <div class="md"><span>${esc(sub)}</span>${chip}${isAdmin() ? `<span>${priceText(i)}</span>` : ''}</div></span></button>
     <div class="stock num"><b>${i.stock}</b><span>発注点 ${i.reorderPoint}</span></div>
     <div class="acts"><button class="ab in" data-act="stock" data-id="${i.itemId}" data-t="in">入庫</button><button class="ab" data-act="stock" data-id="${i.itemId}" data-t="out">出庫</button></div>
   </div>`;
@@ -811,9 +815,11 @@ function openForm(id) {
   const it = id ? itemById(id) : null;
   S.form = it ? Object.assign({ mode: 'edit', photo: '' }, it) : { mode: 'new', itemName: '', model: '', useFor: '', stock: '', reorderPoint: '', parLevel: '', orderUnitName: '', unitsPerPkg: 1, minOrderUnits: 1, price: '', supplierEmail: '', photo: '' };
   // 単価は「バラ1個」か「1単位（袋・箱など）」のどちらで入力するか選べる。シートにはバラ1個の単価で保存する
+  // 単価は「バラ1個」か「1単位」のどちらで登録するか選べる。シートには入力した金額と「単価の単位」をそのまま保存する
   const per = Math.max(1, Number(S.form.unitsPerPkg) || 1), pr = Number(S.form.price);
-  S.form.unitPrice = S.form.price === '' || !isFinite(pr) ? '' : String(round2(pr * per));
-  S.form.priceMode = per > 1 && S.form.price !== '' && !Number.isInteger(pr) && Number.isInteger(round2(pr * per)) ? 'unit' : 'piece';
+  S.form.priceMode = S.form.priceBasis === '単位' ? 'unit' : 'piece';
+  if (S.form.priceMode === 'unit') { S.form.unitPrice = String(S.form.unitPrice ?? ''); S.form.price = S.form.unitPrice === '' ? '' : String(Number(S.form.unitPrice) / per); }
+  else S.form.unitPrice = S.form.price === '' || !isFinite(pr) ? '' : String(round2(pr * per));
   loadSuppliers(); go('form');
 }
 const round2 = x => Math.round(Number(Number(x) + 'e2')) / 100;
@@ -831,7 +837,7 @@ function priceHint() {
   const f = S.form, per = Math.max(1, Number(f.unitsPerPkg) || 1);
   if (f.priceMode === 'unit') {
     const v = Number(f.unitPrice);
-    return f.unitPrice === '' || !isFinite(v) ? `${unitLabel(f)}あたりの金額を入れてください` : `バラ1個あたり ${yen2(v / per)}（シートにはこの金額で保存します）`;
+    return f.unitPrice === '' || !isFinite(v) ? `${unitLabel(f)}あたりの金額を入れてください` : `この金額のまま保存し、発注メールにも載せます（バラ1個あたり約 ${yen2(v / per)}）`;
   }
   const v = Number(f.price);
   return f.price === '' || !isFinite(v) ? 'バラ1個あたりの金額を入れてください' : per > 1 ? `${unitLabel(f)}あたり ${yen2(v * per)}` : '';
@@ -928,11 +934,11 @@ async function formSave() {
     orderUnitName: n('orderUnitName'), unitsPerPkg: n('unitsPerPkg') || 1, minOrderUnits: n('minOrderUnits') || 1 };
   if (isNew || isAdmin()) p.supplierEmail = n('supplierEmail');
   if (isAdmin()) {
-    // シートには「バラ1個の単価」で保存する（1単位の単価で入力したときは入数で割る）
-    const per = Math.max(1, Number(f.unitsPerPkg) || 1);
+    // 入力した金額をそのまま保存し、「バラ」か「単位」かも一緒に保存する（割り算はしない）
     const src = f.priceMode === 'unit' ? n('unitPrice') : n('price');
     if (src !== '' && (isNaN(Number(src)) || Number(src) < 0)) { toast('単価を数字で入力してください'); return; }
-    p.price = src === '' ? '' : String(f.priceMode === 'unit' ? Math.round(Number(src) / per * 10000) / 10000 : Number(src));
+    p.price = src === '' ? '' : String(Number(src));
+    p.priceBasis = f.priceMode === 'unit' ? '単位' : 'バラ';
   }
   let r;
   if (isNew) {
@@ -963,14 +969,14 @@ function renderCart() {
   S.cart.forEach(i => { const k = i.supplierName || i.supplierEmail || '発注先なし'; (groups[k] = groups[k] || []).push(i); });
   let total = 0, sups = 0;
   const html = Object.entries(groups).map(([name, rows]) => {
-    const gt = rows.reduce((a, i) => a + i.qty * i.price, 0);
+    const gt = rows.reduce((a, i) => a + amountOf(i, i.qty), 0);
     total += gt; if (rows.some(i => i.qty > 0)) sups++;
     return `<div class="gh">${esc(name)}<span class="num">${yen(gt)}</span></div><div class="list">${rows.map(i => {
       const pk = i.unitsPerPkg > 1 ? `<small>${i.qty / i.unitsPerPkg}${esc(i.orderUnitName || '単位')}</small>` : '<small>個</small>';
       return `<div class="crow"><div class="nm">${esc(i.itemName)}</div>
         <div class="md num">${esc(i.model || '')} 在庫 ${i.stock}・未納 ${i.orderedQuantity}・発注点 ${i.reorderPoint}${i.parLevel !== '' ? '・上限 ' + i.parLevel : ''}</div>
         <div class="line"><div class="step num"><button data-act="cartStep" data-id="${i.itemId}" data-d="-1" aria-label="減らす">−</button><b>${i.qty}${pk}</b><button data-act="cartStep" data-id="${i.itemId}" data-d="1" aria-label="増やす">＋</button></div>
-        <div class="price num">単価 ${yen(i.price)}<b>${yen(i.qty * i.price)}</b></div></div></div>`;
+        <div class="price num">単価 ${priceText(i)}<b>${yen(amountOf(i, i.qty))}</b></div></div></div>`;
     }).join('')}</div>`;
   }).join('');
   app.className = 'with-bar';
