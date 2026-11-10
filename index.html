@@ -313,7 +313,7 @@ main.count-fit .chint{flex:none;margin:6px 2px 0;min-height:22px}
 <script>
 /* ===== 設定 ===== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwKo_UPvrx4JmY58n-mXe0xoEYpQXxM1oIsixyP5K7QWtK2WuM5e83bAC2ayoczGi-0/exec';
-const VERSION = 'v7.9';
+const VERSION = 'v8.0';
 
 const app = document.getElementById('app');
 const store = {
@@ -659,6 +659,9 @@ function renderItemList() {
     <div class="list">${rows.length ? rows.map(itemRow).join('') : '<div class="empty-msg">条件に合う物品がありません</div>'}</div>`;
 }
 const NOPHOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8 8"/></svg>';
+/* 数え方の単位：入数が1で発注の単位（箱・袋など）があれば、その単位で数える（例：3箱）。それ以外は「個」 */
+const qu = i => i && Math.max(1, Number(i.unitsPerPkg) || 1) === 1 && String(i.orderUnitName || '').trim() ? String(i.orderUnitName).trim() : '個';
+const quId = id => qu(itemById(id));
 /* 単価の表示：1単位で登録した物品は「¥1,000/箱」、バラで登録した物品は「¥500」 */
 const priceText = i => i.priceBasis === '単位' ? `${yen(i.unitPrice)}/${i.orderUnitName || '単位'}` : yen(i.price);
 /* 個数 qty の金額（1単位で登録した物品は「1単位の金額 × 単位数」で計算し、端数を出さない） */
@@ -693,25 +696,26 @@ function renderStock() {
     ${isIn ? `<div class="kind">
       <button class="${st.kind === 'normal' ? 'on' : ''}" data-act="kind" data-k="normal">通常入庫<small>発注した物が届いた</small></button>
       <button class="${st.kind === 'warranty' ? 'on w' : ''}" data-act="kind" data-k="warranty">メーカー保証品<small>無償・未納は減らない</small></button></div>
-      <div class="infoline"><span>未納の発注</span><b class="num">${it.orderedQuantity}個</b></div>` : ''}
+      <div class="infoline"><span>未納の発注</span><b class="num">${it.orderedQuantity}${esc(qu(it))}</b></div>` : ''}
     <div class="tiles num">
       <div class="tile"><span class="lab">在庫</span><span class="tv">${it.stock}<small id="after"></small></span><span class="tsub">いまの帳簿</span></div>
-      <div class="tile act" id="qtile"><span class="lab">${isIn ? '入庫数' : '出庫数'}</span><span class="tv"><span id="kv">－</span><small>個</small></span><span class="tsub">バラの個数</span></div>
+      <div class="tile act" id="qtile"><span class="lab">${isIn ? '入庫数' : '出庫数'}</span><span class="tv"><span id="kv">－</span><small>${esc(qu(it))}</small></span><span class="tsub">${qu(it) === '個' ? 'バラの個数' : qu(it) + 'の数'}</span></div>
     </div>
     <div class="sheet"><div class="sheet-in">
       <div class="sheet-head"><b>${isIn ? '入庫数' : '出庫数'}</b><button class="go" id="kgo" data-act="stockGo" disabled>${isIn ? '入庫する' : '出庫する'}</button></div>
       <div class="hint" id="kh"></div>${keypadHTML()}</div></div>`;
+  const U = qu(it);
   setKP(st.value || '', 4, v => {
     st.value = v;
     const n = Number(v || 0);
     $('kv').textContent = v || '－';
     $('after').textContent = n ? ` → ${isIn ? it.stock + n : it.stock - n}` : '';
     let hint = isIn ? '入庫した数を入力してください' : '使った数を入力してください', cls = 'hint', ok = n > 0;
-    if (n && isIn && st.kind === 'warranty') { hint = `保証品として記録します。未納（${it.orderedQuantity}個）はそのまま、金額は0円です`; cls = 'hint ok'; }
-    else if (n && isIn && n > it.orderedQuantity) { hint = `未納（${it.orderedQuantity}個）より多い数です。保証品が混ざっていませんか？ このまま記録すると、多い分は「要確認」に入ります`; cls = 'hint alert'; }
-    else if (n && isIn) hint = `未納 ${it.orderedQuantity}個 → ${it.orderedQuantity - n}個 になります`;
-    else if (n && !isIn && n > it.stock) { hint = `在庫（${it.stock}個）より多くは出庫できません`; cls = 'hint alert'; ok = false; }
-    else if (n && !isIn && it.stock - n < it.reorderPoint) { hint = `出庫後 ${it.stock - n}個。発注点（${it.reorderPoint}）を下回ります`; cls = 'hint warn'; }
+    if (n && isIn && st.kind === 'warranty') { hint = `保証品として記録します。未納（${it.orderedQuantity}${U}）はそのまま、金額は0円です`; cls = 'hint ok'; }
+    else if (n && isIn && n > it.orderedQuantity) { hint = `未納（${it.orderedQuantity}${U}）より多い数です。保証品が混ざっていませんか？ このまま記録すると、多い分は「要確認」に入ります`; cls = 'hint alert'; }
+    else if (n && isIn) hint = `未納 ${it.orderedQuantity}${U} → ${it.orderedQuantity - n}${U} になります`;
+    else if (n && !isIn && n > it.stock) { hint = `在庫（${it.stock}${U}）より多くは出庫できません`; cls = 'hint alert'; ok = false; }
+    else if (n && !isIn && it.stock - n < it.reorderPoint) { hint = `出庫後 ${it.stock - n}${U}。発注点（${it.reorderPoint}）を下回ります`; cls = 'hint warn'; }
     $('kh').textContent = hint; $('kh').className = cls;
     $('kgo').disabled = !ok;
   });
@@ -721,7 +725,7 @@ function stockGo() {
   if (!it || !n) return;
   const type = st.dir === 'out' ? '出庫' : st.kind === 'warranty' ? '保証品入庫' : '入庫';
   enqueue('stock_update', { itemId: it.itemId, itemName: it.itemName, type, quantity: n }, { itemId: it.itemId, type, quantity: n });
-  toast(`${it.itemName}：${type} ${n}個`);
+  toast(`${it.itemName}：${type} ${n}${qu(it)}`);
   const back = st.back; S.stock = null; go(back === 'alerts' ? 'alerts' : 'items');
 }
 
@@ -770,7 +774,7 @@ function renderCount() {
     <div class="cinfo">
       <div class="nm">${esc(it.itemName)}</div>
       <div class="md">${esc([it.model, it.useFor].filter(Boolean).join('・'))}${it.reorderPoint ? `　発注点 ${it.reorderPoint}` : ''}</div>
-      <div class="prev num">前回の数（帳簿） <b>${it.stock}</b>個 <span class="muted">${esc(upd)}</span>${it.orderedQuantity ? `<span class="muted">・未納 ${it.orderedQuantity}</span>` : ''}</div>
+      <div class="prev num">前回の数（帳簿） <b>${it.stock}</b>${esc(qu(it))} <span class="muted">${esc(upd)}</span>${it.orderedQuantity ? `<span class="muted">・未納 ${it.orderedQuantity}</span>` : ''}</div>
     </div>
     <div class="cstep num" id="cstep">
       <button class="sb" data-step="-1" aria-label="1つ減らす">−</button>
@@ -880,9 +884,16 @@ function openForm(id) {
   loadSuppliers(); go('form');
 }
 const round2 = x => Math.round(Number(Number(x) + 'e2')) / 100;
-const unitLabel = f => `1${f.orderUnitName || '単位'}（${Math.max(1, Number(f.unitsPerPkg) || 1)}個入）`;
+const unitLabel = f => Math.max(1, Number(f.unitsPerPkg) || 1) === 1 ? `1${f.orderUnitName || '個'}` : `1${f.orderUnitName || '単位'}（${Math.max(1, Number(f.unitsPerPkg) || 1)}個入）`;
 function priceFieldHTML() {
   const f = S.form, unit = f.priceMode === 'unit', k = unit ? 'unitPrice' : 'price';
+  // 入数が1のときは「バラ1個＝1単位」なので選ぶ必要がない（例：1箱の単価）
+  if (Math.max(1, Number(f.unitsPerPkg) || 1) === 1) {
+    if (unit) { f.priceMode = 'piece'; f.price = f.unitPrice; }
+    return `<div class="field"><label for="f-price">${esc(unitLabel(f))}の単価（円）</label>
+      <input id="f-price" data-f="price" type="text" inputmode="decimal" value="${esc(f.price ?? '')}" placeholder="例：12000">
+      <p class="fnote" id="pricehint">発注メールにもこの金額を載せます</p></div>`;
+  }
   return `<div class="field"><label for="f-${k}">単価（円）</label>
     <div class="seg2" style="margin:0 0 6px"><button type="button" class="${unit ? '' : 'on'}" data-act="pmode" data-m="piece">バラ1個の単価</button>
       <button type="button" class="${unit ? 'on' : ''}" data-act="pmode" data-m="unit">${esc(unitLabel(f))}の単価</button></div>
@@ -897,7 +908,8 @@ function priceHint() {
     return f.unitPrice === '' || !isFinite(v) ? `${unitLabel(f)}あたりの金額を入れてください` : `この金額のまま保存し、発注メールにも載せます（バラ1個あたり約 ${yen2(v / per)}）`;
   }
   const v = Number(f.price);
-  return f.price === '' || !isFinite(v) ? 'バラ1個あたりの金額を入れてください' : per > 1 ? `${unitLabel(f)}あたり ${yen2(v * per)}` : '';
+  if (per === 1) return '発注メールにもこの金額を載せます';
+  return f.price === '' || !isFinite(v) ? 'バラ1個あたりの金額を入れてください' : `${unitLabel(f)}あたり ${yen2(v * per)}`;
 }
 const yen2 = n => '¥' + (Math.round(n * 100) / 100).toLocaleString('ja-JP', { maximumFractionDigits: 2 });
 function renderForm() {
@@ -914,7 +926,7 @@ function renderForm() {
         <button class="btn" data-act="photo">${img ? '写真を変える' : '写真を登録'}</button></div></div>
       <div class="fgrp"><h3>基本の情報</h3>
         ${inp('itemName', '物品名', 'text', true)}${inp('model', '型番・規格')}${inp('useFor', '用途（機種など）')}</div>
-      <div class="fgrp"><h3>在庫の管理（ふだん数えるバラの個数）</h3>
+      <div class="fgrp"><h3>${qu(f) === '個' ? '在庫の管理（ふだん数えるバラの個数）' : `在庫の管理（${esc(qu(f))}の数で数える）`}</h3>
         ${isNew ? inp('stock', '今ある数', 'num', true) : ''}
         <div class="row2">${inp('reorderPoint', '発注点', 'num', true)}${inp('parLevel', '発注上限', 'num')}</div>
         <p class="fnote">在庫＋未納が発注点を下回ると発注カートに入り、発注上限まで補う数が提案されます。</p>
@@ -950,6 +962,7 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   const k = ev.target.dataset && ev.target.dataset.f;
   if (k && S.form && S.view === 'form') S.form[k] = ev.target.value;
+  if (S.view === 'form' && (k === 'unitsPerPkg' || k === 'orderUnitName')) { const y = scrollY; render(); scrollTo(0, y); }
 });
 function compressImage(file) {
   return new Promise((res, rej) => {
@@ -1029,7 +1042,7 @@ function renderCart() {
     const gt = rows.reduce((a, i) => a + amountOf(i, i.qty), 0);
     total += gt; if (rows.some(i => i.qty > 0)) sups++;
     return `<div class="gh">${esc(name)}<span class="num">${yen(gt)}</span></div><div class="list">${rows.map(i => {
-      const pk = i.unitsPerPkg > 1 ? `<small>${i.qty / i.unitsPerPkg}${esc(i.orderUnitName || '単位')}</small>` : '<small>個</small>';
+      const pk = i.unitsPerPkg > 1 ? `<small>${i.qty / i.unitsPerPkg}${esc(i.orderUnitName || '単位')}</small>` : `<small>${esc(qu(i))}</small>`;
       return `<div class="crow"><div class="nm">${esc(i.itemName)}</div>
         <div class="md num">${esc(i.model || '')} 在庫 ${i.stock}・未納 ${i.orderedQuantity}・発注点 ${i.reorderPoint}${i.parLevel !== '' ? '・上限 ' + i.parLevel : ''}</div>
         <div class="line"><div class="step num"><button data-act="cartStep" data-id="${i.itemId}" data-d="-1" aria-label="減らす">−</button><b>${i.qty}${pk}</b><button data-act="cartStep" data-id="${i.itemId}" data-d="1" aria-label="増やす">＋</button></div>
@@ -1100,12 +1113,12 @@ function renderHistList() {
   rows.forEach(o => { const k = byDay ? (o.date || '日付なし') : o.itemName; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); });
   const all = S.orders;
   el.innerHTML = `<div class="cnt"><span>${rows.length}件の発注</span>${isAdmin() ? `<span>合計 <b class="num">${yen(total)}</b></span>` : ''}</div>
-    ${rows.length ? [...groups].map(([k, os]) => `<div class="gh">${esc(byDay && k !== '日付なし' ? fmtDay(k) : k)}<span>${os.length}件${!byDay ? `・計${os.reduce((s, o) => s + o.qty, 0)}個` : ''}</span></div>
+    ${rows.length ? [...groups].map(([k, os]) => `<div class="gh">${esc(byDay && k !== '日付なし' ? fmtDay(k) : k)}<span>${os.length}件${!byDay ? `・計${os.reduce((s, o) => s + o.qty, 0)}${esc(quId(os[0].itemId))}` : ''}</span></div>
       <div class="list">${os.map(o => { const st = orderState(o);
         return `<button class="hrow" data-act="hdetail" data-i="${all.indexOf(o)}"><div class="info">
           <div class="nm">${esc(byDay ? o.itemName : (o.date ? fmtDay(o.date) : '日付なし') + '　' + (o.supplier || ''))}</div>
           <div class="md">${esc(byDay ? [o.supplier, o.user].filter(Boolean).join('・') : '発注 ' + o.user)}</div></div>
-          <div class="rt num"><span class="qty">${o.qty}個</span><span class="chip ${st.cls}">${esc(st.label)}</span>${isAdmin() && o.status !== 'キャンセル済み' ? `<span class="amt">${yen(o.total)}</span>` : ''}</div></button>`; }).join('')}</div>`).join('')
+          <div class="rt num"><span class="qty">${o.qty}${esc(quId(o.itemId))}</span><span class="chip ${st.cls}">${esc(st.label)}</span>${isAdmin() && o.status !== 'キャンセル済み' ? `<span class="amt">${yen(o.total)}</span>` : ''}</div></button>`; }).join('')}</div>`).join('')
       : '<div class="empty-msg">条件に合う発注はありません</div>'}`;
 }
 function histDetail() {
@@ -1115,7 +1128,7 @@ function histDetail() {
   return `<div class="scrim" data-act="hclose"></div><div class="dsheet" role="dialog" aria-label="発注の詳細"><div class="in">
     <h3>${esc(o.itemName)}</h3>
     <dl class="num"><dt>発注日時</dt><dd>${esc(o.ts || '不明')}</dd><dt>発注先</dt><dd>${esc(o.supplier || '－')}</dd><dt>発注者</dt><dd>${esc(o.user)}</dd>
-      <dt>数量</dt><dd>${o.qty}個（入庫 ${o.received || 0}個）</dd><dt>状態</dt><dd><span class="chip ${st.cls}">${esc(st.label)}</span></dd>
+      <dt>数量</dt><dd>${o.qty}${esc(quId(o.itemId))}（入庫 ${o.received || 0}${esc(quId(o.itemId))}）</dd><dt>状態</dt><dd><span class="chip ${st.cls}">${esc(st.label)}</span></dd>
       ${isAdmin() ? `<dt>単価</dt><dd>${yen(o.price)}</dd><dt>金額</dt><dd>${yen(o.total)}</dd>` : ''}</dl>
     <div class="acts2">${canCancel ? `<button class="btn danger" data-act="hcancel">発注をキャンセル</button>` : '<span></span>'}<button class="btn" data-act="hclose">閉じる</button></div>
   </div></div>`;
@@ -1124,7 +1137,7 @@ async function histCancel() {
   const o = S.orders[S.hist.detail.i];
   if (!o) return;
   const left = Math.max(0, o.qty - (o.received || 0));
-  if (!confirm(`${o.itemName}（${o.received ? '残り' : ''}${left}個）の発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？`)) return;
+  if (!confirm(`${o.itemName}（${o.received ? '残り' : ''}${left}${quId(o.itemId)}）の発注をキャンセルし、発注先へキャンセルのメールを送ります。よろしいですか？`)) return;
   const r = await blocking('キャンセルしています…', () => call('cancel_order', { historyId: o.historyId, mailId: o.mailId }));
   if (!r) return;
   toast(r.message || 'キャンセルしました'); S.hist.detail = null; S.orders = null; render(); loadItems(false); loadAlerts(true);
@@ -1144,11 +1157,12 @@ function renderAlerts() {
     ${!S.alerts ? '<div class="empty-msg">読み込んでいます…</div>' : !list.length ? '<div class="empty-msg">確認が必要なものはありません</div>' : list.map(alertCard).join('')}`;
 }
 function alertCard(a) {
+  const U = quId(a.itemId);
   let kind, cls, f1l, f1, f2l, f2, note = a.note;
-  if (a.kind === 'over') { kind = '未納より多い入庫'; cls = 'alert'; f1l = `通常入庫（${a.ts} ${a.user}）`; f1 = `${a.qty}個`; f2l = '入庫前の在庫'; f2 = a.before === null ? '－' : `${a.before}個`;
+  if (a.kind === 'over') { kind = '未納より多い入庫'; cls = 'alert'; f1l = `通常入庫（${a.ts} ${a.user}）`; f1 = `${a.qty}${U}`; f2l = '入庫前の在庫'; f2 = a.before === null ? '－' : `${a.before}${U}`;
     note = `${note}。メーカー保証品ではありませんか？`; }
-  else if (a.kind === 'count') { kind = '棚卸しで不一致'; cls = 'warn'; f1l = '帳簿の在庫'; f1 = a.before === null ? '－' : `${a.before}個`; f2l = `数えた数（${a.ts} ${a.user}）`; f2 = `${a.qty}個`; }
-  else { kind = '入庫がない'; cls = 'warn'; f1l = `発注（${a.ts}${a.supplier ? ' ' + a.supplier : ''}）`; f1 = `${a.qty}個`; f2l = '経過・未着'; f2 = `${a.days}日・${a.remaining}個`;
+  else if (a.kind === 'count') { kind = '棚卸しで不一致'; cls = 'warn'; f1l = '帳簿の在庫'; f1 = a.before === null ? '－' : `${a.before}${U}`; f2l = `数えた数（${a.ts} ${a.user}）`; f2 = `${a.qty}${U}`; }
+  else { kind = '入庫がない'; cls = 'warn'; f1l = `発注（${a.ts}${a.supplier ? ' ' + a.supplier : ''}）`; f1 = `${a.qty}${U}`; f2l = '経過・未着'; f2 = `${a.days}日・${a.remaining}${U}`;
     note = `発注から${S.lateDays || 14}日以上、入庫の記録がありません。`; }
   const btns = isAdmin() ? `<div class="acts2">${REASONS[a.kind].map(([act, l, c]) => `<button class="btn ${c}" data-act="resolve" data-h="${a.historyId}" data-id="${a.itemId}" data-a="${act}">${l}</button>`).join('')}</div>` : '';
   return `<div class="acard ${cls}"><span class="chip ${cls}" style="align-self:flex-start">${kind}</span>
